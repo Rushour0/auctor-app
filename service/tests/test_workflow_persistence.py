@@ -64,7 +64,9 @@ class Collection:
     def create_index(self, *_: Any, **__: Any) -> None:
         return None
 
-    def update_one(self, query: dict[str, Any], update: dict[str, Any], upsert: bool = False) -> Result:
+    def update_one(
+        self, query: dict[str, Any], update: dict[str, Any], upsert: bool = False
+    ) -> Result:
         document = next((row for row in self.documents if matches(row, query)), None)
         inserted = document is None
         if inserted:
@@ -242,9 +244,7 @@ def test_scheduler_enqueues_each_due_window_once() -> None:
     assert len(first) == 1
     assert second == []
     assert first[0]["trigger_id"] == "client-1:content_loop:2026-07-12T06:00:00+00:00"
-    assert content_loop["next_content_check_at"] == datetime(
-        2026, 7, 12, 12, tzinfo=timezone.utc
-    )
+    assert content_loop["next_content_check_at"] == datetime(2026, 7, 12, 12, tzinfo=timezone.utc)
     assert workflow.pending_triggers("workspace-1") == first
     workflow.acknowledge_trigger("workspace-1", first[0]["trigger_id"], "completed")
     assert workflow.pending_triggers("workspace-1") == []
@@ -293,6 +293,4 @@ def test_generic_platform_none_path_unchanged() -> None:
     assert len(triggers) == 1
     assert triggers[0]["trigger_id"] == "client-1:content_loop:2026-07-12T06:00:00+00:00"
     assert "platform" not in triggers[0]
-    assert content_loop["next_content_check_at"] == datetime(
-        2026, 7, 12, 12, tzinfo=timezone.utc
-    )
+    assert content_loop["next_content_check_at"] == datetime(2026, 7, 12, 12, tzinfo=timezone.utc)

@@ -89,11 +89,7 @@ def summarize_event(event: dict) -> dict:
     text = payload.get("summary") or payload.get("text") or default_text
 
     recorded_at = _iso(event.get("recorded_at"))
-    message_id = (
-        event.get("idempotency_key")
-        or event.get("event_id")
-        or recorded_at
-    )
+    message_id = event.get("idempotency_key") or event.get("event_id") or recorded_at
 
     return {
         "id": message_id,

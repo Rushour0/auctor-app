@@ -36,10 +36,7 @@ async def list_posts(
     db = request.app.state.db
     total = await db.content_posts.count_documents(query)
     cursor = (
-        db.content_posts.find(query, {"_id": 0})
-        .sort("updated_at", -1)
-        .skip(offset)
-        .limit(limit)
+        db.content_posts.find(query, {"_id": 0}).sort("updated_at", -1).skip(offset).limit(limit)
     )
     posts = await cursor.to_list(length=limit)
     return {"posts": posts, "total": total, "limit": limit, "offset": offset}
@@ -48,9 +45,7 @@ async def list_posts(
 @router.get("/{post_id}")
 async def get_post(request: Request, post_id: str) -> dict:
     """Fetch a single content post by its post_id (the collection's identity field)."""
-    doc = await request.app.state.db.content_posts.find_one(
-        {"post_id": post_id}, {"_id": 0}
-    )
+    doc = await request.app.state.db.content_posts.find_one({"post_id": post_id}, {"_id": 0})
     if doc is None:
         raise HTTPException(status_code=404, detail=f"post {post_id} not found")
     return doc

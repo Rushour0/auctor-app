@@ -18,9 +18,7 @@ class _FakeCursor:
         self._docs = docs
 
     def sort(self, key: str, direction: int) -> "_FakeCursor":
-        self._docs = sorted(
-            self._docs, key=lambda d: d.get(key), reverse=direction < 0
-        )
+        self._docs = sorted(self._docs, key=lambda d: d.get(key), reverse=direction < 0)
         return self
 
     def skip(self, offset: int) -> "_FakeCursor":

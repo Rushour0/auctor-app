@@ -123,7 +123,7 @@ def _eval(document: dict[str, Any], expr: Any) -> Any:
     if isinstance(expr, list):
         return [_eval(document, item) for item in expr]
     if isinstance(expr, dict) and len(expr) == 1:
-        (op, arg), = expr.items()
+        ((op, arg),) = expr.items()
         if op == "$ifNull":
             value = _eval(document, arg[0])
             return value if value is not None else _eval(document, arg[1])
@@ -132,7 +132,11 @@ def _eval(document: dict[str, Any], expr: Any) -> Any:
                 condition, then, other = arg
             else:
                 condition, then, other = arg["if"], arg["then"], arg["else"]
-            return _eval(document, then) if bool(_eval(document, condition)) else _eval(document, other)
+            return (
+                _eval(document, then)
+                if bool(_eval(document, condition))
+                else _eval(document, other)
+            )
         if op == "$eq":
             return _eval(document, arg[0]) == _eval(document, arg[1])
         if op == "$ne":
@@ -185,7 +189,7 @@ def _group(documents: list[dict[str, Any]], spec: dict[str, Any]) -> list[dict[s
         for field, accumulator in spec.items():
             if field == "_id":
                 continue
-            (op, expr), = accumulator.items()
+            ((op, expr),) = accumulator.items()
             values = [_eval(doc, expr) for doc in rows]
             if op == "$sum":
                 row[field] = sum(_num(value) for value in values)
@@ -259,7 +263,7 @@ class FakeCollection:
     def aggregate(self, pipeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rows = [deepcopy(document) for document in self.documents]
         for stage in pipeline:
-            (op, spec), = stage.items()
+            ((op, spec),) = stage.items()
             if op == "$match":
                 rows = [row for row in rows if _match(row, spec)]
             elif op == "$group":

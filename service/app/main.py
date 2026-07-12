@@ -22,6 +22,7 @@ from service.auctor.workflow import (
 from .config import settings
 from .routers.auth import require_operator, router as auth_router
 from .routers.conversations import router as conversations_router
+from .routers.demo import router as demo_router
 from .routers.metrics import router as metrics_router
 from .routers.posts import router as posts_router
 from .routers.x_oauth import router as x_oauth_router
@@ -50,6 +51,7 @@ app.add_middleware(
 app.include_router(x_oauth_router)
 app.include_router(auth_router)
 app.include_router(conversations_router)
+app.include_router(demo_router)
 app.include_router(metrics_router)
 app.include_router(posts_router)
 
@@ -157,9 +159,7 @@ async def list_workflow_triggers(
 
 
 @app.post("/api/workflows/triggers/ack")
-async def ack_workflow_trigger(
-    ack: TriggerAck, operator: dict = Depends(require_operator)
-) -> dict:
+async def ack_workflow_trigger(ack: TriggerAck, operator: dict = Depends(require_operator)) -> dict:
     """Move a pending trigger to running/completed/failed."""
     try:
         return await run_in_threadpool(
@@ -210,9 +210,7 @@ async def workflow_status(
 
 
 @app.post("/api/integrations/linkup/verify")
-async def verify_linkup(
-    workspace_id: str, operator: dict = Depends(require_operator)
-) -> dict:
+async def verify_linkup(workspace_id: str, operator: dict = Depends(require_operator)) -> dict:
     """Verify Linkup credentials without consuming a search request."""
     try:
         return await run_in_threadpool(LinkupCollector().verify_authentication, workspace_id)

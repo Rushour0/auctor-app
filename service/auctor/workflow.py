@@ -152,7 +152,11 @@ class WorkflowStore:
                 self.db.client_pipelines.update_one(
                     key,
                     {
-                        "$set": {"fleet_id": intake.fleet_id, "intake": client_doc, "updated_at": now},
+                        "$set": {
+                            "fleet_id": intake.fleet_id,
+                            "intake": client_doc,
+                            "updated_at": now,
+                        },
                         "$setOnInsert": {
                             **key,
                             "status": status,
@@ -163,7 +167,11 @@ class WorkflowStore:
                     },
                     upsert=True,
                 )
-        return {"fleet_id": intake.fleet_id, "client_count": len(intake.clients), "status": "active"}
+        return {
+            "fleet_id": intake.fleet_id,
+            "client_count": len(intake.clients),
+            "status": "active",
+        }
 
     def save_artifact(self, artifact: WorkflowArtifact) -> dict[str, Any]:
         now = utc_now()
@@ -195,8 +203,14 @@ class WorkflowStore:
             },
         )
         if result.matched_count == 0:
-            raise ValueError("client pipeline does not exist; start the fleet before saving artifacts")
-        return {"artifact_id": artifact.artifact_id, "version": artifact.version, "recorded_at": now}
+            raise ValueError(
+                "client pipeline does not exist; start the fleet before saving artifacts"
+            )
+        return {
+            "artifact_id": artifact.artifact_id,
+            "version": artifact.version,
+            "recorded_at": now,
+        }
 
     def record_event(self, event: WorkflowEvent) -> dict[str, Any]:
         now = utc_now()
@@ -388,7 +402,9 @@ class WorkflowStore:
             "next_content_check_at": scheduled_for,
         }
 
-    def pending_triggers(self, workspace_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    def pending_triggers(
+        self, workspace_id: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         query: dict[str, Any] = {"status": "pending"}
         if workspace_id:
             query["workspace_id"] = workspace_id
@@ -396,7 +412,9 @@ class WorkflowStore:
             self.db.workflow_triggers.find(query, {"_id": 0}).sort("scheduled_for", ASCENDING)
         )[: max(1, min(limit, 1000))]
 
-    def list_triggers(self, workspace_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    def list_triggers(
+        self, workspace_id: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Every trigger regardless of status, newest-first — the Crons page's full queue view
         (``pending_triggers`` above is pending-only, oldest-first, for the scheduler's own poll)."""
         query: dict[str, Any] = {}
@@ -408,7 +426,9 @@ class WorkflowStore:
             .limit(max(1, min(limit, 1000)))
         )
 
-    def list_events(self, workspace_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+    def list_events(
+        self, workspace_id: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """Recent fleet_events, newest-first — the Conversations feed."""
         query: dict[str, Any] = {}
         if workspace_id:

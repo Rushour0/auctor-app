@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     github_login_redirect_uri: str = "http://localhost:8000/api/auth/github/callback"
     operator_session_secret: str = ""
 
+    # Public, no-signup "suggest my posts" demo (POST /api/demo/suggest) — the only
+    # unauthenticated route in this service by design. Research is Linkup-backed
+    # (same provider/pattern as the real researcher/trend_researcher specialists,
+    # never a raw LinkedIn/X profile scrape) and suggestions are LLM-drafted from
+    # those sourced findings only. Blank by default so Settings loads cleanly with
+    # no .env values; the route fails loud at call time, never at import/app-boot.
+    linkup_api_key: str = ""
+    anthropic_api_key: str = ""
+    demo_rate_limit_per_day: int = 3
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
