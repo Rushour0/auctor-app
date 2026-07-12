@@ -1,7 +1,7 @@
 """Exercises the public, no-signup POST /api/demo/suggest route and the underlying
-service.app.demo Linkup-research + Anthropic-draft helpers.
+service.app.demo Linkup-research + OpenAI-draft helpers.
 
-No real Mongo/Linkup/Anthropic in CI: the route's rate-limit collection is a tiny
+No real Mongo/Linkup/OpenAI in CI: the route's rate-limit collection is a tiny
 fake async double (same pattern as test_posts_routes.py); the two external calls
 in service/app/demo.py are exercised directly against a fake httpx.Client so no
 network I/O happens in the test suite.
@@ -120,49 +120,60 @@ def test_research_handle_raises_search_failed_on_error_response(monkeypatch):
     assert exc.value.kind == "search_failed"
 
 
+def test_research_handle_caps_findings_to_eight(monkeypatch):
+    monkeypatch.setattr(settings, "linkup_api_key", "key")
+    results = [{"name": f"finding {i}", "url": f"https://x.com/{i}"} for i in range(20)]
+    fake = _FakeHttpClient([_FakeResponse(200, {"results": results})])
+    findings = demo.research_handle(None, "someone", client=fake)
+    assert len(findings) == 8
+    assert findings[0]["source_url"] == "https://x.com/0"
+
+
 # --------------------------------------------------------------------------- unit: draft_suggestions
 
 
-def test_draft_suggestions_fails_loud_without_anthropic_key(monkeypatch):
-    monkeypatch.setattr(settings, "anthropic_api_key", "")
+def _openai_response(suggestions: list[dict]) -> _FakeResponse:
+    import json
+
+    return _FakeResponse(
+        200,
+        {
+            "choices": [
+                {"message": {"content": json.dumps({"suggestions": suggestions})}}
+            ]
+        },
+    )
+
+
+def test_draft_suggestions_fails_loud_without_openai_key(monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", "")
     with pytest.raises(demo.DemoError) as exc:
         demo.draft_suggestions([{"claim": "x", "source_url": "https://x.com/1"}])
     assert exc.value.kind == "missing_api_key"
 
 
 def test_draft_suggestions_drops_ungrounded_suggestions(monkeypatch):
-    monkeypatch.setattr(settings, "anthropic_api_key", "key")
+    monkeypatch.setattr(settings, "openai_api_key", "key")
     findings = [{"claim": "Shipped v2", "source_url": "https://x.com/1"}]
-    import json
 
     fake = _FakeHttpClient(
         [
-            _FakeResponse(
-                200,
-                {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": json.dumps(
-                                [
-                                    {
-                                        "post_type": "ship-announcement",
-                                        "topic": "v2 launch",
-                                        "draft": "We shipped v2!",
-                                        "finding_index": 0,
-                                    },
-                                    # Out-of-range index — must be dropped, never fabricated.
-                                    {
-                                        "post_type": "hot-take",
-                                        "topic": "invented",
-                                        "draft": "made up claim",
-                                        "finding_index": 5,
-                                    },
-                                ]
-                            ),
-                        }
-                    ]
-                },
+            _openai_response(
+                [
+                    {
+                        "post_type": "ship-announcement",
+                        "topic": "v2 launch",
+                        "draft": "We shipped v2!",
+                        "finding_index": 0,
+                    },
+                    # Out-of-range index — must be dropped, never fabricated.
+                    {
+                        "post_type": "hot-take",
+                        "topic": "invented",
+                        "draft": "made up claim",
+                        "finding_index": 5,
+                    },
+                ]
             )
         ]
     )
@@ -172,20 +183,63 @@ def test_draft_suggestions_drops_ungrounded_suggestions(monkeypatch):
 
 
 def test_draft_suggestions_raises_no_signal_if_nothing_grounded(monkeypatch):
-    monkeypatch.setattr(settings, "anthropic_api_key", "key")
-    import json
-
-    fake = _FakeHttpClient(
-        [
-            _FakeResponse(
-                200,
-                {"content": [{"type": "text", "text": json.dumps([{"finding_index": 9}])}]},
-            )
-        ]
-    )
+    monkeypatch.setattr(settings, "openai_api_key", "key")
+    fake = _FakeHttpClient([_openai_response([{"finding_index": 9}])])
     with pytest.raises(demo.DemoError) as exc:
         demo.draft_suggestions([{"claim": "x", "source_url": "https://x.com/1"}], client=fake)
     assert exc.value.kind == "no_signal"
+
+
+def test_draft_suggestions_caps_to_three_even_if_more_are_grounded(monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", "key")
+    findings = [{"claim": f"finding {i}", "source_url": f"https://x.com/{i}"} for i in range(5)]
+    suggestions = [
+        {"post_type": "milestone", "topic": f"t{i}", "draft": f"d{i}", "finding_index": i}
+        for i in range(5)
+    ]
+    fake = _FakeHttpClient([_openai_response(suggestions)])
+    out = demo.draft_suggestions(findings, client=fake)
+    assert len(out) == 3
+
+
+# --------------------------------------------------------------------------- integration: run_public_suggestion
+
+
+def test_run_public_suggestion_wires_research_into_draft(monkeypatch):
+    """Real end-to-end wiring test (not mocking run_public_suggestion itself, unlike
+    the route tests below) — proves research_handle's findings actually flow into
+    draft_suggestions, not just that each function works in isolation."""
+    monkeypatch.setattr(settings, "linkup_api_key", "key")
+    monkeypatch.setattr(settings, "openai_api_key", "key")
+
+    linkup_response = _FakeResponse(
+        200, {"results": [{"name": "Shipped v2", "url": "https://x.com/1"}]}
+    )
+    openai_response = _openai_response(
+        [
+            {
+                "post_type": "ship-announcement",
+                "topic": "v2",
+                "draft": "We shipped v2!",
+                "finding_index": 0,
+            }
+        ]
+    )
+
+    calls = {"n": 0}
+
+    def _client_factory(*args, **kwargs):
+        calls["n"] += 1
+        return _FakeHttpClient([linkup_response if calls["n"] == 1 else openai_response])
+
+    monkeypatch.setattr(demo.httpx, "Client", _client_factory)
+
+    result = demo.run_public_suggestion("https://linkedin.com/in/someone", None)
+
+    assert result["sources"] == ["https://x.com/1"]
+    assert result["suggestions"][0]["draft"] == "We shipped v2!"
+    assert result["suggestions"][0]["source_url"] == "https://x.com/1"
+    assert calls["n"] == 2
 
 
 # --------------------------------------------------------------------------- route

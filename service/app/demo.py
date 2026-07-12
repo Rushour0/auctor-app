@@ -9,7 +9,7 @@ Two real calls, both fail-loud on a missing key rather than fabricating a result
    a search API, not a scraper, which is the whole reason it was picked here over
    directly hitting linkedin.com/x.com (see policy.md ANTI-FABRICATION + the
    AskUserQuestion decision this session: Linkup over direct scraping).
-2. Anthropic Messages API — drafts 3 short post suggestions strictly from the
+2. OpenAI Chat Completions API — drafts 3 short post suggestions strictly from the
    findings returned above. The prompt explicitly forbids inventing a claim that
    isn't in the findings, mirroring the real product's claim_sourcing gate — this
    demo exists to prove the provenance mechanic, so it must not fabricate either.
@@ -27,9 +27,8 @@ import httpx
 from .config import settings
 
 LINKUP_SEARCH_URL = "https://api.linkup.so/v1/search"
-ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_MODEL = "claude-sonnet-5"
-ANTHROPIC_VERSION = "2023-06-01"
+OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
+OPENAI_MODEL = "gpt-5.6-terra"
 
 
 class DemoError(RuntimeError):
@@ -109,13 +108,13 @@ def draft_suggestions(
     findings: list[dict[str, Any]],
     client: httpx.Client | None = None,
 ) -> list[dict[str, str]]:
-    """Real Anthropic call: 3 post suggestions, each citing one of ``findings`` by index.
+    """Real OpenAI call: 3 post suggestions, each citing one of ``findings`` by index.
 
     The model is instructed to never state a claim absent from ``findings`` — the same
     zero-tolerance claim_sourcing rule the real ghostwriter/voice_qa pipeline enforces,
     applied here at the prompt level since this demo has no verifier stage of its own.
     """
-    if not settings.anthropic_api_key:
+    if not settings.openai_api_key:
         raise DemoError("missing_api_key", "Suggestions are temporarily unavailable.")
 
     numbered = "\n".join(f"{i}. {f['claim']} ({f['source_url']})" for i, f in enumerate(findings))
@@ -128,23 +127,22 @@ actually supports it — never state a fact, number, or achievement not present 
 findings list. If a post is generic framing with no specific claim, that's fine, but never
 invent a claim to fill a post out.
 
-Respond with ONLY a JSON array, no prose, no markdown fences:
-[{{"post_type": "ship-announcement|hot-take|build-in-public|milestone", "topic": "string",
-"draft": "string, under 280 chars", "finding_index": 0}}]"""
+Respond with ONLY a JSON object, no prose, no markdown fences:
+{{"suggestions": [{{"post_type": "ship-announcement|hot-take|build-in-public|milestone",
+"topic": "string", "draft": "string, under 280 chars", "finding_index": 0}}]}}"""
 
     owns_client = client is None
     client = client or httpx.Client(timeout=30)
     try:
         response = client.post(
-            ANTHROPIC_MESSAGES_URL,
+            OPENAI_CHAT_COMPLETIONS_URL,
             headers={
-                "x-api-key": settings.anthropic_api_key,
-                "anthropic-version": ANTHROPIC_VERSION,
+                "Authorization": f"Bearer {settings.openai_api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": ANTHROPIC_MODEL,
-                "max_tokens": 1024,
+                "model": OPENAI_MODEL,
+                "response_format": {"type": "json_object"},
                 "messages": [{"role": "user", "content": prompt}],
             },
         )
@@ -157,12 +155,10 @@ Respond with ONLY a JSON array, no prose, no markdown fences:
 
     import json
 
-    text = "".join(
-        block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text"
-    )
+    text = payload["choices"][0]["message"]["content"]
     try:
-        suggestions = json.loads(text)
-    except ValueError as error:
+        suggestions = json.loads(text)["suggestions"]
+    except (ValueError, KeyError, TypeError) as error:
         raise DemoError("suggest_failed", "Couldn't generate suggestions right now.") from error
 
     out: list[dict[str, str]] = []

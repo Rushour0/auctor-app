@@ -25,6 +25,23 @@ async def test_github_authorize_fails_loud_without_login_credentials(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_github_authorize_fails_clean_without_session_secret_not_500(monkeypatch):
+    """Regression test: client_id configured but OPERATOR_SESSION_SECRET unset used to
+    raise an unhandled SessionError from session.create_state(), producing a 500. It
+    must be a clean 503 instead — this is exactly the prod bug report that motivated
+    the fix (GitHub App configured, session secret never set in Coolify)."""
+    monkeypatch.setattr(settings, "github_login_client_id", "login_client")
+    monkeypatch.setattr(settings, "operator_session_secret", "")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with app.router.lifespan_context(app):
+            resp = await client.get("/api/auth/github/authorize", follow_redirects=False)
+    assert resp.status_code == 503
+    assert resp.json()["detail"]["kind"] == "missing_session_secret"
+
+
+@pytest.mark.asyncio
 async def test_github_authorize_redirects_with_credentials(monkeypatch):
     monkeypatch.setattr(settings, "github_login_client_id", "login_client")
     monkeypatch.setattr(settings, "operator_session_secret", "test-secret")
@@ -130,6 +147,22 @@ async def test_github_callback_happy_path_sets_operator_cookie(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_github_callback_fails_clean_without_session_secret_not_500(monkeypatch):
+    monkeypatch.setattr(settings, "operator_session_secret", "")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with app.router.lifespan_context(app):
+            resp = await client.get(
+                "/api/auth/github/callback",
+                params={"state": "anything", "code": "auth-code"},
+                follow_redirects=False,
+            )
+    assert resp.status_code == 503
+    assert resp.json()["detail"]["kind"] == "missing_session_secret"
+
+
+@pytest.mark.asyncio
 async def test_github_callback_rejects_bad_state(monkeypatch):
     monkeypatch.setattr(settings, "operator_session_secret", "test-secret")
 
@@ -192,6 +225,111 @@ async def test_gated_fleets_route_allows_valid_cookie(monkeypatch):
             resp = await client.get("/api/fleets")
     assert resp.status_code == 200
     assert resp.json() == {"fleets": [{"fleet_id": "fleet_1"}]}
+
+
+@pytest.mark.asyncio
+async def test_credential_login_fails_loud_when_not_configured(monkeypatch):
+    monkeypatch.setattr(settings, "operator_login_username", "")
+    monkeypatch.setattr(settings, "operator_login_password", "")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with app.router.lifespan_context(app):
+            resp = await client.post(
+                "/api/auth/login", json={"username": "ops", "password": "hunter2"}
+            )
+    assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_credential_login_fails_clean_without_session_secret_not_500(monkeypatch):
+    monkeypatch.setattr(settings, "operator_login_username", "ops")
+    monkeypatch.setattr(settings, "operator_login_password", "correct-horse")
+    monkeypatch.setattr(settings, "operator_session_secret", "")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with app.router.lifespan_context(app):
+            resp = await client.post(
+                "/api/auth/login", json={"username": "ops", "password": "correct-horse"}
+            )
+    assert resp.status_code == 503
+    assert resp.json()["detail"]["kind"] == "missing_session_secret"
+
+
+@pytest.mark.asyncio
+async def test_credential_login_rejects_wrong_password(monkeypatch):
+    monkeypatch.setattr(settings, "operator_login_username", "ops")
+    monkeypatch.setattr(settings, "operator_login_password", "correct-horse")
+    monkeypatch.setattr(settings, "operator_session_secret", "test-secret")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with app.router.lifespan_context(app):
+            resp = await client.post(
+                "/api/auth/login", json={"username": "ops", "password": "wrong"}
+            )
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Invalid username or password."
+
+
+@pytest.mark.asyncio
+async def test_credential_login_rejects_wrong_username(monkeypatch):
+    monkeypatch.setattr(settings, "operator_login_username", "ops")
+    monkeypatch.setattr(settings, "operator_login_password", "correct-horse")
+    monkeypatch.setattr(settings, "operator_session_secret", "test-secret")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with app.router.lifespan_context(app):
+            resp = await client.post(
+                "/api/auth/login", json={"username": "someone-else", "password": "correct-horse"}
+            )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_credential_login_sets_operator_cookie_on_success(monkeypatch):
+    monkeypatch.setattr(settings, "operator_login_username", "ops")
+    monkeypatch.setattr(settings, "operator_login_password", "correct-horse")
+    monkeypatch.setattr(settings, "operator_session_secret", "test-secret")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with app.router.lifespan_context(app):
+            resp = await client.post(
+                "/api/auth/login", json={"username": "ops", "password": "correct-horse"}
+            )
+    assert resp.status_code == 200
+    assert resp.json() == {"login": "ops", "gh_id": 0}
+    assert session.SESSION_COOKIE in resp.cookies
+    claims = session.verify_session(resp.cookies[session.SESSION_COOKIE])
+    assert claims == {"login": "ops", "gh_id": 0, "exp": claims["exp"]}
+
+
+@pytest.mark.asyncio
+async def test_credential_login_session_passes_require_operator_gate(monkeypatch):
+    """The credential-login cookie must work identically to a GitHub-login cookie
+    against every existing require_operator-gated route — same session mechanism."""
+    monkeypatch.setattr(settings, "operator_login_username", "ops")
+    monkeypatch.setattr(settings, "operator_login_password", "correct-horse")
+    monkeypatch.setattr(settings, "operator_session_secret", "test-secret")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with app.router.lifespan_context(app):
+            login_resp = await client.post(
+                "/api/auth/login", json={"username": "ops", "password": "correct-horse"}
+            )
+    token = login_resp.cookies[session.SESSION_COOKIE]
+
+    async with AsyncClient(
+        transport=transport, base_url="http://test", cookies={session.SESSION_COOKIE: token}
+    ) as client:
+        async with app.router.lifespan_context(app):
+            me_resp = await client.get("/api/auth/me")
+    assert me_resp.status_code == 200
+    assert me_resp.json() == {"login": "ops", "gh_id": 0}
 
 
 @pytest.mark.asyncio
