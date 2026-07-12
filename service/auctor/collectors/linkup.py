@@ -138,6 +138,12 @@ class LinkupCollector:
         started_at = utc_now()
         cursor = self.memory.get_cursor(workspace_id, "linkup", "industry-trends")
         from_date = cursor or started_at - timedelta(days=max(1, min(lookback_days, 365)))
+        # Linkup rejects fromDate >= toDate (strict "fromDate must be before toDate").
+        # A same-day cursor (e.g. a second run within 24h of the first) would otherwise
+        # collapse fromDate.date() == toDate.date() and 400 every time. Clamp to at
+        # least a 1-day window when that happens.
+        if from_date.date() >= started_at.date():
+            from_date = started_at - timedelta(days=1)
         self.memory.save_sync_state(
             workspace_id,
             "linkup",

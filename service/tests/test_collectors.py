@@ -251,6 +251,33 @@ def test_linkup_authentication_and_incremental_search() -> None:
     assert memory.states[-1]["cursor"] is not None
 
 
+def test_linkup_same_day_cursor_does_not_collapse_the_date_range() -> None:
+    """Regression test for a real production failure (2026-07-12): a second collect()
+    call within 24h of the first stores a same-day cursor, which used to make
+    fromDate.date() == toDate.date() — Linkup's API rejects that with
+    VALIDATION_ERROR "fromDate must be before toDate" every single time. The
+    collector must clamp to at least a 1-day window instead."""
+    today = datetime.now(timezone.utc)
+    memory = FakeMemory(today)  # cursor from a run earlier today
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/v1/credits/balance":
+            return httpx.Response(200, json={"balance": 10.0})
+        if request.method == "POST" and request.url.path == "/v1/search":
+            body = __import__("json").loads(request.content)
+            captured["fromDate"] = body["fromDate"]
+            captured["toDate"] = body["toDate"]
+            return httpx.Response(200, json={"results": []})
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    collector = LinkupCollector(memory=memory, settings=settings(), client=client)
+    collector.collect("kriti-personal", topics=["building in public"])
+
+    assert captured["fromDate"] < captured["toDate"]
+
+
 def test_linkup_authentication_error_is_structured_and_secret_safe() -> None:
     memory = FakeMemory()
     client = httpx.Client(
