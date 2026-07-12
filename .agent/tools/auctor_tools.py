@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -35,6 +36,8 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from service.app.db import get_db  # noqa: E402
+from service.auctor.collectors.linkup import LinkupCollector  # noqa: E402
+from service.auctor.workflow import WorkflowEvent, WorkflowStore  # noqa: E402
 
 Handler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
@@ -63,6 +66,36 @@ async def _x_engagement_metrics(payload: dict[str, Any]) -> dict[str, Any]:
     from service.app.tools import x_engagement_metrics
 
     return await x_engagement_metrics.run(get_db(), payload)
+
+
+@tool("record_fleet_event")
+async def _record_fleet_event(payload: dict[str, Any]) -> dict[str, Any]:
+    event = WorkflowEvent.model_validate({
+        "workspace_id": payload.get("workspace_id") or os.getenv("AUCTOR_WORKSPACE_ID", "personal"),
+        "fleet_id": payload["fleet_id"], "client_id": payload.get("client_id"),
+        "pipeline": payload.get("pipeline"), "run_id": payload.get("run_id"),
+        "stage_run_id": payload.get("stage_run_id"), "agent": payload.get("agent"),
+        "stage": payload.get("stage"), "outcome": payload.get("outcome"),
+        "event_type": payload["event_type"], "payload": payload.get("payload", {}),
+        "idempotency_key": payload.get("idempotency_key")
+        or f"{payload['fleet_id']}:{payload['event_type']}:{payload.get('client_id', 'fleet')}",
+    })
+    return WorkflowStore().record_event(event)
+
+
+@tool("linkup_client_research")
+async def _linkup_client_research(payload: dict[str, Any]) -> dict[str, Any]:
+    workspace_id = payload.get("workspace_id") or os.getenv("AUCTOR_WORKSPACE_ID", "personal")
+    topics = [payload["name"], *payload.get("topics", [])]
+    return LinkupCollector().collect(workspace_id=workspace_id, topics=topics).model_dump(mode="json")
+
+
+@tool("linkup_trend_research")
+async def _linkup_trend_research(payload: dict[str, Any]) -> dict[str, Any]:
+    workspace_id = payload.get("workspace_id") or os.getenv("AUCTOR_WORKSPACE_ID", "personal")
+    icp = payload.get("icp")
+    topics = icp if isinstance(icp, list) else [str(icp)]
+    return LinkupCollector().collect(workspace_id=workspace_id, topics=topics).model_dump(mode="json")
 
 
 async def _dispatch(tool_name: str, payload: dict[str, Any]) -> dict[str, Any]:

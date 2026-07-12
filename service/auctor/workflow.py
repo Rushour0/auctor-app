@@ -93,7 +93,7 @@ class PublishRecord(BaseModel):
     fleet_id: str = Field(min_length=1)
     client_id: str = Field(min_length=1)
     post_id: str = Field(min_length=1)
-    platform: Literal["x", "linkedin"]
+    platform: Literal["x", "linkedin", "web"]
     status: Literal["not_applicable", "pending", "published", "failed", "unknown"]
     platform_post_id: str | None = None
     post_url: str | None = None

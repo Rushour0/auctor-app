@@ -12,6 +12,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 
 from service.auctor.collectors.linkup import LinkupAPIError, LinkupCollector
+from service.auctor.runner import ContentAgencyRunner
 from service.auctor.workflow import (
     ApprovalRecord,
     FleetIntake,
@@ -66,6 +67,13 @@ class LinkupSyncRequest(BaseModel):
     lookback_days: int = Field(default=14, ge=1, le=365)
     include_domains: list[str] = Field(default_factory=list, max_length=100)
     exclude_domains: list[str] = Field(default_factory=list)
+
+
+class ContentJobRequest(BaseModel):
+    workspace_id: str = Field(min_length=1)
+    fleet_id: str = Field(min_length=1)
+    client_id: str = Field(min_length=1)
+    topic: str = Field(min_length=3, max_length=200)
 
 
 def _workflow_store() -> WorkflowStore:
@@ -277,6 +285,38 @@ async def workflow_run(run_id: str, workspace_id: str) -> dict:
 async def workflow_runs(workspace_id: str, limit: int = 50) -> dict:
     """Return recent correlated runs and task-level scoring metrics."""
     return await run_in_threadpool(_workflow_store().recent_runs, workspace_id, limit)
+
+
+@app.post("/api/content-jobs")
+async def start_content_job(request: ContentJobRequest) -> dict:
+    """Run live research, drafting, and QA, stopping at the required web approval gate."""
+    try:
+        return await run_in_threadpool(
+            ContentAgencyRunner().run_until_approval,
+            request.workspace_id, request.fleet_id, request.client_id, request.topic,
+        )
+    except (LinkupAPIError, ValueError) as error:
+        raise _linkup_http_error(error) from error
+
+
+@app.post("/api/content-jobs/approvals/{approval_id}/approve")
+async def approve_content_job(approval_id: str, workspace_id: str) -> dict:
+    try:
+        return await run_in_threadpool(
+            ContentAgencyRunner().approve_and_publish_web, workspace_id, approval_id
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get("/public/posts/{post_id}")
+async def public_post(post_id: str) -> dict:
+    post = await app.state.db.public_deliveries.find_one(
+        {"post_id": post_id, "status": "published"}, {"_id": 0, "workspace_id": 0}
+    )
+    if not post:
+        raise HTTPException(status_code=404, detail="published post not found")
+    return post
 
 
 @app.post("/api/integrations/linkup/verify")

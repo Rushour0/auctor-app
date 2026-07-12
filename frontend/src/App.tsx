@@ -25,6 +25,7 @@ import Crons from "./pages/Crons";
 import Posts from "./pages/Posts";
 import Metrics from "./pages/Metrics";
 import Onboarding from "./pages/Onboarding";
+import ContentJob from "./pages/ContentJob";
 
 export default function App() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="crons" element={<Crons />} />
           <Route path="posts" element={<Posts />} />
           <Route path="metrics" element={<Metrics />} />
+          <Route path="content-job" element={<ContentJob />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
