@@ -19,6 +19,7 @@ def test_hermes_mcp_exposes_collector_tools() -> None:
                     "enqueue_due_content_loops",
                     "get_collection_status",
                     "get_pending_workflow_triggers",
+                    "get_recent_collected_data",
                     "get_workflow_status",
                     "record_workflow_event",
                     "save_approval_record",

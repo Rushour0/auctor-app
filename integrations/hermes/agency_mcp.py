@@ -2,7 +2,7 @@
 """Auctor's stdio MCP bridge for Hermes Agent."""
 
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -185,6 +185,29 @@ def sync_posthog(
 def get_collection_status(workspace_id: str) -> dict:
     """Return Mongo record counts and collector freshness for one workspace."""
     return AuctorMemory(get_settings()).status(workspace_id)
+
+
+@mcp.tool()
+def get_recent_collected_data(
+    workspace_id: str,
+    hours: int = 6,
+    until: str | None = None,
+    limit_per_collection: int = 500,
+) -> dict:
+    """Read all evidence collected in a bounded recent window for content synthesis."""
+    if not 1 <= hours <= 168:
+        raise ValueError("hours must be between 1 and 168")
+    window_end = (
+        datetime.fromisoformat(until.replace("Z", "+00:00"))
+        if until
+        else datetime.now(timezone.utc)
+    )
+    return AuctorMemory(get_settings()).recent_data(
+        workspace_id=workspace_id,
+        since=window_end - timedelta(hours=hours),
+        until=window_end,
+        limit=limit_per_collection,
+    )
 
 
 if __name__ == "__main__":

@@ -34,12 +34,18 @@ class AuctorMemory:
             [("workspace_id", ASCENDING), ("source", ASCENDING), ("external_id", ASCENDING)],
             unique=True,
         )
+        self.db.raw_records.create_index(
+            [("workspace_id", ASCENDING), ("collected_at", DESCENDING)]
+        )
         self.db.events.create_index(
             [("workspace_id", ASCENDING), ("source", ASCENDING), ("external_id", ASCENDING)],
             unique=True,
         )
         self.db.events.create_index(
             [("workspace_id", ASCENDING), ("occurred_at", DESCENDING), ("event_type", ASCENDING)]
+        )
+        self.db.events.create_index(
+            [("workspace_id", ASCENDING), ("provenance.collected_at", DESCENDING)]
         )
         self.db.metric_observations.create_index(
             [("workspace_id", ASCENDING), ("source", ASCENDING), ("external_id", ASCENDING)],
@@ -48,8 +54,14 @@ class AuctorMemory:
         self.db.metric_observations.create_index(
             [("workspace_id", ASCENDING), ("metric_key", ASCENDING), ("period_start", DESCENDING)]
         )
+        self.db.metric_observations.create_index(
+            [("workspace_id", ASCENDING), ("provenance.collected_at", DESCENDING)]
+        )
         self.db.trend_items.create_index(
             [("workspace_id", ASCENDING), ("external_id", ASCENDING)], unique=True
+        )
+        self.db.trend_items.create_index(
+            [("workspace_id", ASCENDING), ("collected_at", DESCENDING)]
         )
         self.db.sync_states.create_index(
             [("workspace_id", ASCENDING), ("source", ASCENDING), ("key", ASCENDING)],
@@ -144,6 +156,49 @@ class AuctorMemory:
                     "last_started_at", DESCENDING
                 )
             ),
+        }
+
+    def recent_data(
+        self, workspace_id: str, since: datetime, until: datetime | None = None, limit: int = 500
+    ) -> dict[str, Any]:
+        """Return the evidence collected in one bounded content window.
+
+        The window is based on collection time rather than occurrence time. This ensures a six-hour
+        content run sees late-arriving GitHub events and articles discovered during that run while
+        excluding older records merely because their underlying event happened recently.
+        """
+        if since.tzinfo is None:
+            raise ValueError("since must include a timezone")
+        until = until or utc_now()
+        if until.tzinfo is None:
+            raise ValueError("until must include a timezone")
+        if since >= until:
+            raise ValueError("since must be earlier than until")
+        if not 1 <= limit <= 2_000:
+            raise ValueError("limit must be between 1 and 2000")
+
+        def rows(collection: Any, timestamp_field: str) -> list[dict[str, Any]]:
+            query = {
+                "workspace_id": workspace_id,
+                timestamp_field: {"$gte": since, "$lt": until},
+            }
+            return list(
+                collection.find(query, {"_id": 0})
+                .sort(timestamp_field, DESCENDING)
+                .limit(limit)
+            )
+
+        data = {
+            "events": rows(self.db.events, "provenance.collected_at"),
+            "metrics": rows(self.db.metric_observations, "provenance.collected_at"),
+            "trends": rows(self.db.trend_items, "collected_at"),
+            "raw_records": rows(self.db.raw_records, "collected_at"),
+        }
+        return {
+            "workspace_id": workspace_id,
+            "window": {"since": since, "until": until},
+            "counts": {name: len(items) for name, items in data.items()},
+            **data,
         }
 
     def save_provider_connection(self, connection: ProviderConnection) -> None:

@@ -1,7 +1,12 @@
 {
-  "name": "sync_posthog",
-  "provider": "auctor-memory",
-  "description": "Collect product events and event-count metrics from PostHog.",
-  "writes": ["raw_records", "events", "metric_observations", "sync_states"],
-  "required_env": ["MONGODB_URI", "POSTHOG_HOST", "POSTHOG_PROJECT_ID", "POSTHOG_PERSONAL_API_KEY"]
+  "name": "posthog-collector",
+  "description": "Collect product events and event-count metrics through the auctor-memory MCP server.",
+  "command": ["mcp", "auctor-memory", "sync_posthog"],
+  "input_schema": {"type": "object", "properties": {"workspace_id": {"type": "string"}, "since_days": {"type": "integer"}, "limit": {"type": "integer"}}, "required": ["workspace_id"]},
+  "output_schema": {"type": "object"},
+  "allowed_agents": ["metrics_researcher"],
+  "risk_level": "low",
+  "approval_policy": "none",
+  "timeout_s": 120,
+  "retry_policy": {"max_attempts": 2, "backoff_s": 3}
 }

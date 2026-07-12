@@ -33,6 +33,7 @@ mcp_servers:
         - verify_posthog_connection
         - sync_posthog
         - get_collection_status
+        - get_recent_collected_data
       prompts: false
       resources: false
 

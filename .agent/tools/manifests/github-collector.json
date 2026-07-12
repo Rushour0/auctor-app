@@ -1,7 +1,12 @@
 {
-  "name": "sync_github",
-  "provider": "auctor-memory",
-  "description": "Collect PRs merged into main since the previous successful check, with commit messages and code changes.",
-  "writes": ["raw_records", "events", "sync_states"],
-  "required_env": ["MONGODB_URI", "GITHUB_TOKEN"]
+  "name": "github-collector",
+  "description": "Collect PRs merged into main through the auctor-memory MCP server.",
+  "command": ["mcp", "auctor-memory", "sync_github"],
+  "input_schema": {"type": "object", "properties": {"workspace_id": {"type": "string"}, "repositories": {"type": "array", "items": {"type": "string"}}, "username": {"type": ["string", "null"]}, "target_branch": {"type": "string"}, "since_days": {"type": "integer"}}, "required": ["workspace_id"]},
+  "output_schema": {"type": "object"},
+  "allowed_agents": ["metrics_researcher"],
+  "risk_level": "low",
+  "approval_policy": "none",
+  "timeout_s": 120,
+  "retry_policy": {"max_attempts": 2, "backoff_s": 3}
 }
