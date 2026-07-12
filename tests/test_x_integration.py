@@ -34,6 +34,13 @@ class FakeCollection:
     async def delete_one(self, query: dict) -> None:
         self.docs = [d for d in self.docs if not all(d.get(k) == v for k, v in query.items())]
 
+    async def find_one_and_delete(self, query: dict) -> dict | None:
+        for doc in self.docs:
+            if all(doc.get(k) == v for k, v in query.items()):
+                self.docs.remove(doc)
+                return doc
+        return None
+
     async def replace_one(self, query: dict, doc: dict, upsert: bool = False) -> None:
         self.replaced.append(doc)
         self.docs = [d for d in self.docs if not all(d.get(k) == v for k, v in query.items())]
@@ -145,7 +152,7 @@ async def test_get_valid_access_token_refreshes_expired_token_and_rotates_refres
 async def test_get_valid_access_token_missing_credential_fails_loud(db):
     with pytest.raises(x_integration.XApiError) as exc:
         await x_integration.get_valid_access_token(db, "client_unknown")
-    assert exc.value.kind == "missing_api_key"
+    assert exc.value.kind == "missing_oauth_credential"
 
 
 async def test_fleet_isolation_credential_lookup_scoped_by_client_id(db):

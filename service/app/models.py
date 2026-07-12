@@ -166,6 +166,13 @@ class FleetRun(BaseModel):
     updated_at: datetime = Field(default_factory=now)
 
 
+# Default workspace_id matches service/auctor/config.py's Settings.auctor_workspace_id default —
+# today's single-workspace reality — pending workspace_id becoming canonical end-to-end (resolved
+# open decision from the post-merge integration understanding pass; client_id stays a sub-key
+# under it for now).
+_DEFAULT_WORKSPACE_ID = "kriti-personal"
+
+
 class XOAuthState(BaseModel):
     """Short-lived PKCE handshake state for one client's X authorize-redirect round trip.
 
@@ -174,6 +181,7 @@ class XOAuthState(BaseModel):
     """
 
     state: str = Field(default_factory=lambda: uuid4().hex)
+    workspace_id: str = _DEFAULT_WORKSPACE_ID
     client_id: str
     code_verifier: str
     created_at: datetime = Field(default_factory=now)
@@ -187,6 +195,7 @@ class XOAuthCredential(BaseModel):
     ``refresh_token`` rotates on every use per X's refresh-token-rotation behavior.
     """
 
+    workspace_id: str = _DEFAULT_WORKSPACE_ID
     client_id: str
     x_user_id: str | None = None
     access_token: str
@@ -198,7 +207,16 @@ class XOAuthCredential(BaseModel):
 
 
 class ApprovalRequest(BaseModel):
+    """X-publish approval record.
+
+    Stored in the ``x_approval_requests`` collection — deliberately split from Kriti's
+    ``approval_requests``/``ApprovalRecord`` (incompatible required-field/unique-index shape; see
+    the post-merge integration understanding pass). Revisit merging the two once workspace_id
+    unification lands end-to-end on both sides.
+    """
+
     id: str = Field(default_factory=lambda: f"approval_{uuid4().hex[:12]}")
+    workspace_id: str = _DEFAULT_WORKSPACE_ID
     client_id: str
     post_id: str | None = None
     question: str

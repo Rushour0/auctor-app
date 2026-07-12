@@ -59,6 +59,13 @@ class FakeCollection:
     async def delete_one(self, query: dict) -> None:
         self.docs = [d for d in self.docs if not all(d.get(k) == v for k, v in query.items())]
 
+    async def find_one_and_delete(self, query: dict) -> dict | None:
+        for doc in self.docs:
+            if all(doc.get(k) == v for k, v in query.items()):
+                self.docs.remove(doc)
+                return doc
+        return None
+
     async def replace_one(self, query: dict, doc: dict, upsert: bool = False) -> None:
         self.docs = [d for d in self.docs if not all(d.get(k) == v for k, v in query.items())]
         self.docs.append(doc)
@@ -80,10 +87,13 @@ def _valid_credential(client_id: str) -> dict:
     ).model_dump()
 
 
-def _approved_approval(client_id: str, approval_id: str, consumed: bool = False) -> dict:
+def _approved_approval(
+    client_id: str, approval_id: str, artifact_id: str = "draft_1", consumed: bool = False
+) -> dict:
     return {
-        "id": approval_id,
+        "approval_id": approval_id,
         "client_id": client_id,
+        "artifact_id": artifact_id,
         "status": "approved",
         "consumed_at": datetime.now(timezone.utc) if consumed else None,
     }
@@ -192,6 +202,51 @@ async def test_publish_x_missing_api_key_fails_loud(monkeypatch):
     )
     assert result["status"] == "failed"
     assert "missing_api_key" in result["error_message"]
+    # infra-only failure must not burn the client's single-use approval
+    assert db.approval_requests.docs[0]["consumed_at"] is None
+
+
+async def test_publish_x_approval_scoped_to_wrong_draft_fails_loud():
+    db = FakeDB()
+    db.x_oauth_credentials.docs.append(_valid_credential("client_a"))
+    db.approval_requests.docs.append(
+        _approved_approval("client_a", "appr_1", artifact_id="draft_OTHER")
+    )
+
+    result = await publish_x.run(
+        db,
+        {
+            "client_id": "client_a",
+            "draft_id": "draft_1",
+            "text": "hello world",
+            "approval_id": "appr_1",
+        },
+    )
+    assert result["status"] == "failed"
+    assert "draft" in result["error_message"].lower()
+
+
+async def test_publish_x_media_assets_without_media_id_fails_loud():
+    db = FakeDB()
+    db.x_oauth_credentials.docs.append(_valid_credential("client_a"))
+    db.approval_requests.docs.append(_approved_approval("client_a", "appr_1"))
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        result = await publish_x.run(
+            db,
+            {
+                "client_id": "client_a",
+                "draft_id": "draft_1",
+                "text": "hello world",
+                "approval_id": "appr_1",
+                "media_assets": [{"type": "image", "asset_url": "https://example.com/x.png"}],
+            },
+        )
+
+    assert result["status"] == "failed"
+    assert "unsupported_media" in result["error_message"]
+    mock_post.assert_not_called()
+    assert db.approval_requests.docs[0]["consumed_at"] is None
 
 
 async def test_publish_x_sends_text_verbatim():

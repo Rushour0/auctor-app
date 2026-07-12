@@ -89,12 +89,11 @@ async def handle_callback(db: AsyncIOMotorDatabase, *, state: str, code: str) ->
     """Consume the one-time PKCE state, exchange ``code`` for tokens, and persist them."""
     api_key, api_secret = require_app_credentials()
 
-    state_doc = await db.x_oauth_states.find_one({"state": state})
+    state_doc = await db.x_oauth_states.find_one_and_delete({"state": state})
     if state_doc is None:
         raise XApiError("invalid_oauth_state", "Unknown or already-consumed OAuth state.")
     client_id = state_doc["client_id"]
     code_verifier = state_doc["code_verifier"]
-    await db.x_oauth_states.delete_one({"state": state})
 
     body = {
         "grant_type": "authorization_code",
@@ -175,7 +174,7 @@ async def get_valid_access_token(db: AsyncIOMotorDatabase, client_id: str) -> st
     doc = await db.x_oauth_credentials.find_one({"client_id": client_id})
     if doc is None:
         raise XApiError(
-            "missing_api_key",
+            "missing_oauth_credential",
             f"No X OAuth credential on file for client_id={client_id!r}; "
             "the client must complete /api/x/oauth/authorize first.",
         )
