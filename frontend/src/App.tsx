@@ -3,6 +3,8 @@
 // BrowserRouter is provided by main.tsx, so this component is purely the route
 // table. The structure is deliberately flat:
 //
+//   /try                       -> the public, no-signup "suggest my posts" demo
+//                                  (NOT gated, NOT a tab — see Try.tsx)
 //   /login                     -> the standalone GitHub-OAuth screen (NOT a tab)
 //   (RequireAuth)              -> session gate; unauthenticated -> /login
 //     (AppShell)              -> persistent header + four-tab nav + <Outlet/>
@@ -12,9 +14,9 @@
 //       metrics               -> Metrics
 //   *                          -> bounce unknown paths back to the index
 //
-// There are EXACTLY four tabs — Login lives outside AppShell so it is a screen,
-// not a fifth nav destination. This unit owns only the routing + gate wiring;
-// AppShell and the four page components are authored by their own units.
+// There are EXACTLY four operator tabs — Login and the public /try demo both live
+// outside AppShell, neither is a nav destination. This unit owns only the routing +
+// gate wiring; AppShell and the page components are authored by their own units.
 
 import { Routes, Route, Navigate } from "react-router-dom";
 import Login from "./auth/Login";
@@ -26,10 +28,12 @@ import Posts from "./pages/Posts";
 import Metrics from "./pages/Metrics";
 import Onboarding from "./pages/Onboarding";
 import ContentJob from "./pages/ContentJob";
+import Try from "./pages/Try";
 
 export default function App() {
   return (
     <Routes>
+      <Route path="/try" element={<Try />} />
       <Route path="/login" element={<Login />} />
       <Route path="/onboarding" element={<Onboarding />} />
       <Route element={<RequireAuth />}>

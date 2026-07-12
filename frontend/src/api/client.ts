@@ -158,6 +158,45 @@ export interface Metrics {
   available_platforms: ('x' | 'linkedin')[];
 }
 
+/** One post idea from the public, no-signup demo — always grounded in a real source_url. */
+export interface DemoSuggestion {
+  post_type: string;
+  topic: string;
+  draft: string;
+  source_url: string;
+}
+
+export interface DemoSuggestResult {
+  suggestions: DemoSuggestion[];
+  sources: string[];
+}
+
+/**
+ * POST /api/demo/suggest — the one unauthenticated route. Unlike jpost, this reads
+ * the FastAPI `{"detail": "..."}` error body and throws that clean message (rate-limit
+ * text, "no signal found", etc.) instead of the raw JSON string.
+ */
+export async function demoSuggest(
+  body: { linkedin_url?: string; twitter_handle?: string },
+): Promise<DemoSuggestResult> {
+  const res = await fetch('/api/demo/suggest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const errBody = await res.json();
+      if (typeof errBody?.detail === 'string') message = errBody.detail;
+    } catch {
+      // non-JSON error body — fall back to statusText already set above
+    }
+    throw new Error(message);
+  }
+  return res.json() as Promise<DemoSuggestResult>;
+}
+
 // ---------------------------------------------------------------------------
 // Typed client. The one object pages import to reach the backend.
 // ---------------------------------------------------------------------------

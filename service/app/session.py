@@ -61,9 +61,7 @@ def verify_session(token: str) -> dict:
     """Verify a session token and return its decoded claims."""
     try:
         payload, supplied_signature = token.split(".", 1)
-        expected = _b64encode(
-            hmac.new(_secret(), payload.encode(), hashlib.sha256).digest()
-        )
+        expected = _b64encode(hmac.new(_secret(), payload.encode(), hashlib.sha256).digest())
         if not hmac.compare_digest(supplied_signature, expected):
             raise SessionError("bad signature")
         data = json.loads(_b64decode(payload))
@@ -95,9 +93,7 @@ def verify_state(state: str) -> str:
     """Verify an OAuth state and return its ``redirect_after`` target."""
     try:
         payload, supplied_signature = state.split(".", 1)
-        expected = _b64encode(
-            hmac.new(_secret(), payload.encode(), hashlib.sha256).digest()
-        )
+        expected = _b64encode(hmac.new(_secret(), payload.encode(), hashlib.sha256).digest())
         if not hmac.compare_digest(supplied_signature, expected):
             raise SessionError("bad signature")
         data = json.loads(_b64decode(payload))

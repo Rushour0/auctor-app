@@ -195,9 +195,7 @@ class AuctorMemory:
                 timestamp_field: {"$gte": since, "$lt": until},
             }
             return list(
-                collection.find(query, {"_id": 0})
-                .sort(timestamp_field, DESCENDING)
-                .limit(limit)
+                collection.find(query, {"_id": 0}).sort(timestamp_field, DESCENDING).limit(limit)
             )
 
         data = {

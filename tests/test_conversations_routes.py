@@ -241,7 +241,5 @@ async def test_event_stream_emits_frames_then_stops_on_disconnect():
 
 async def test_event_stream_heartbeat_when_no_new_events():
     db = _FakeDB(_sample_fleets(), _sample_events())
-    frames = [
-        frame async for frame in _event_stream(_FakeRequest(), db, "fleet_1", _dt(10))
-    ]
+    frames = [frame async for frame in _event_stream(_FakeRequest(), db, "fleet_1", _dt(10))]
     assert frames == [": keepalive\n\n"]

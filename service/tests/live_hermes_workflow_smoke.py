@@ -158,7 +158,11 @@ async def main() -> None:
             }
             if status["counts"] != expected:
                 raise AssertionError(f"unexpected counts: {status['counts']} != {expected}")
-            print(json.dumps({"workspace_id": workspace_id, "fleet_id": fleet_id, **status}, default=str))
+            print(
+                json.dumps(
+                    {"workspace_id": workspace_id, "fleet_id": fleet_id, **status}, default=str
+                )
+            )
 
 
 if __name__ == "__main__":

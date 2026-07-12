@@ -55,9 +55,7 @@ def counts(db: Database, workspace_id: str) -> dict[str, int]:
     }
 
 
-def posts_by_status(
-    db: Database, workspace_id: str, platform: str | None = None
-) -> dict[str, int]:
+def posts_by_status(db: Database, workspace_id: str, platform: str | None = None) -> dict[str, int]:
     """Content posts grouped by ``status``. When ``platform`` is set the drill-down
     is per-platform — it keys off ``platform_status.<platform>`` existing, never a
     boolean flag — so the x/linkedin tabs count independently."""
@@ -164,9 +162,7 @@ def top_pipelines(db: Database, workspace_id: str) -> list[dict[str, Any]]:
     return out
 
 
-def posts_per_day(
-    db: Database, workspace_id: str, start: datetime
-) -> list[dict[str, Any]]:
+def posts_per_day(db: Database, workspace_id: str, start: datetime) -> list[dict[str, Any]]:
     """Post volume over a densified 7-day window starting at ``start`` (UTC).
 
     Days with no posts still appear as zero-count buckets so the chart never has
@@ -225,9 +221,7 @@ def failure_reasons(db: Database, workspace_id: str) -> list[dict[str, Any]]:
     return out
 
 
-def recent_events(
-    db: Database, workspace_id: str, limit: int = 20
-) -> list[dict[str, Any]]:
+def recent_events(db: Database, workspace_id: str, limit: int = 20) -> list[dict[str, Any]]:
     """The most recent fleet events for the activity feed."""
     return list(
         db.fleet_events.find(_match(workspace_id), {"_id": 0})
