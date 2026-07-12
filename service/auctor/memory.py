@@ -5,6 +5,7 @@ from typing import Any
 
 from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.database import Database
+from pydantic_core import MultiHostUrl, Url
 
 from .config import Settings, get_settings
 from .models import MemoryEvent, MetricObservation, ProviderConnection, RawRecord, TrendItem
@@ -74,7 +75,18 @@ class AuctorMemory:
 
     @staticmethod
     def _document(model: Any) -> dict[str, Any]:
-        return model.model_dump(mode="python")
+        def bson_safe(value: Any) -> Any:
+            if isinstance(value, (Url, MultiHostUrl)):
+                return str(value)
+            if type(value).__module__ == "pydantic.networks":
+                return str(value)
+            if isinstance(value, dict):
+                return {key: bson_safe(item) for key, item in value.items()}
+            if isinstance(value, (list, tuple)):
+                return [bson_safe(item) for item in value]
+            return value
+
+        return bson_safe(model.model_dump(mode="python"))
 
     def save_raw(self, record: RawRecord) -> str:
         key = {
