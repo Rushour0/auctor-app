@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema#",
+  "suite": "auctor_regression",
+  "description": "Suite-level metadata for the Auctor domain pack's regression eval cases. The cases themselves live in the sibling cases.json as a top-level JSON array (one object per case) so the build gate can validate them directly as a list of named, specialist-referencing scenarios. Cases are scenario descriptions for a human or an LLM-judge harness to run against a live or simulated fleet run; they are not executable test code. Unlike Microsite Factory's single-budget suite, this suite exercises TWO separate retry budgets and the pipeline-isolation boundary within one client.",
+  "site_max_retry_attempts_under_test": 2,
+  "content_max_retry_attempts_under_test": 1,
+  "cases_file": "cases.json"
+}

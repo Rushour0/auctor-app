@@ -1,0 +1,37 @@
+{
+  "name": "synthesize_video_intro",
+  "description": "Synthesize a short video intro for one client via HeyGen, from source text supplied by the builder specialist. Called by the builder specialist itself, inside the site-build pipeline — not a separate specialist role. A site_draft missing this asset is a voice_qa fail, not a partial pass.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "synthesize_video_intro"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string", "description": "Client this synthesized video asset belongs to." },
+      "script_text": { "type": "string", "description": "Exact script to synthesize, sourced from site_copy.headline + .bio — never invented by the tool." },
+      "source_text_ref": { "type": "string", "description": "Which site_copy field(s) the script came from." },
+      "avatar_ref": { "type": "string", "description": "Existing HeyGen avatar/likeness reference for this client, if provisioned. Omit if not yet set up (falls back to a generic avatar)." },
+      "output_dir": { "type": "string", "description": "Client's own preview_dir; the tool rejects any resolved path that escapes this client's own directory." }
+    },
+    "required": ["client_id", "script_text", "source_text_ref", "output_dir"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "asset_url": { "type": "string" },
+      "duration_s": { "type": "number" },
+      "status": { "type": "string", "enum": ["ok", "error"] },
+      "error_message": { "type": "string" }
+    },
+    "required": ["client_id", "asset_url", "status"]
+  },
+  "allowed_agents": ["builder"],
+  "risk_level": "low",
+  "approval_policy": "none",
+  "timeout_s": 120,
+  "retry_policy": {
+    "max_attempts": 2,
+    "backoff_s": 10,
+    "retry_on": ["timeout", "5xx", "rate_limited"],
+    "fail_loud_on": ["missing_api_key"]
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "name": "send_whatsapp_approval",
+  "description": "Send one human approval request over the WhatsApp Business API — the approval channel for both the site-deploy gate and the per-post publish gate, alongside Hermes' existing web/Telegram/Discord channel identities. Supports single-item requests (one client's site_deploy, or one post's post_publish_single) and batch fan-out requests (post_publish_batch, a 'reply ALL' covering two or more of one client's already-voice_qa-passing posts) — for a batch, this tool sends exactly one WhatsApp message but returns one distinct approval_requests document id per artifact_ref, never a single shared id covering the batch; the caller records each id individually. This tool only SENDS the request template (client-scoped, per FLEET ISOLATION — never references or blocks on another client's state); the human's reply is captured by a separate inbound webhook (not part of this manifest) that resolves each returned approval_request_id to granted/denied. Every approval this tool issues is single-use per artifact_ref and is never reused across a retry of the same site/post or across a different client. Fails clearly (fail-loud, non-retryable message) when WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, or WHATSAPP_BUSINESS_ACCOUNT_ID is unavailable, or when the client has no recipient WhatsApp identity on file, rather than silently degrading or fabricating a request id.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "send_whatsapp_approval"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": {
+        "type": "string",
+        "description": "Client this approval request is scoped to; threaded through to output and downstream fleet events. Never inferred — must be passed through explicitly per FLEET ISOLATION. This tool must never read or block on another client_id's approval state."
+      },
+      "fleet_id": {
+        "type": "string",
+        "description": "ID of the parent fleet run this approval request belongs to, if this call is part of a fleet-run pass (site-build). Omit for a standalone content-loop cycle not tied to a fleet run."
+      },
+      "approval_kind": {
+        "type": "string",
+        "enum": ["site_deploy", "post_publish_single", "post_publish_batch"],
+        "description": "Which gate this request authorizes. 'site_deploy' precedes exactly one deploy_site call. 'post_publish_single' precedes exactly one publish_x/publish_linkedin pair for one draft_id. 'post_publish_batch' precedes a WhatsApp 'reply ALL' fan-out covering multiple draft_ids, every one of which must already carry a passing voice_qa_report before this call is made — batch approval is a review convenience only and is never available for a post whose voice_qa_report isn't already gate_result: pass."
+      },
+      "phone_number_id": {
+        "type": "string",
+        "description": "WHATSAPP_PHONE_NUMBER_ID this request is sent from (the Auctor agency's own WhatsApp Business sender identity, not the client's)."
+      },
+      "recipient": {
+        "type": "string",
+        "description": "Human approver's WhatsApp number/identity on file for this client. Required — this tool fails loud rather than falling back to a default or shared recipient."
+      },
+      "summary": {
+        "type": "string",
+        "description": "Short human-readable summary of what's being approved: for site_deploy, the site preview link and client name; for post_publish_single, the post text preview; for post_publish_batch, a numbered list of each draft's text preview so a single 'reply ALL' can be understood at a glance."
+      },
+      "artifact_refs": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "build_id (site_deploy: exactly one) or draft_id (post_publish_single: exactly one; post_publish_batch: two or more). Every ref must already carry a passing voice_qa_report (gate_result: pass) for its exact candidate_ref before this call is made — this tool does not itself check voice_qa_report, the calling specialist (deployer or publisher) is responsible for only invoking it with already-passing candidates."
+      }
+    },
+    "required": ["client_id", "approval_kind", "phone_number_id", "recipient", "summary", "artifact_refs"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "message_id": {
+        "type": "string",
+        "description": "WhatsApp Business API message id for the single outbound message sent (one message even for a batch request)."
+      },
+      "approval_request_ids": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "One approval_requests document id per entry in artifact_refs, in the same order, even for a post_publish_batch request — never a single shared id covering the batch. Each id is what a later agency_approve/agency_approve_batch call resolves once the human replies."
+      },
+      "status": { "type": "string", "enum": ["sent", "failed"] },
+      "error_message": {
+        "type": "string",
+        "description": "Present only when status is 'failed', e.g. 'missing_api_key', 'unlinked_recipient', or a WhatsApp API error detail."
+      },
+      "sent_at": { "type": "string", "description": "ISO-8601 timestamp the message was accepted by the WhatsApp Business API." },
+      "usage": {
+        "type": "object",
+        "description": "Provider usage/cost for this send, rolled up into ClientPipeline.usage then the fleet-level total, per artifacts.md's usage-rollup rule.",
+        "properties": {
+          "tokens_in": { "type": "integer", "description": "Always 0 for this tool — WhatsApp send is a template API call, not an LLM call." },
+          "tokens_out": { "type": "integer", "description": "Always 0 for this tool." },
+          "cost_usd": { "type": "number", "description": "Per-message WhatsApp Business API conversation cost, if billed by the provider for this template/recipient/category." }
+        }
+      }
+    },
+    "required": ["client_id", "approval_request_ids", "status"]
+  },
+  "allowed_agents": ["deployer", "publisher"],
+  "risk_level": "medium",
+  "approval_policy": "none",
+  "timeout_s": 20,
+  "retry_policy": {
+    "max_attempts": 2,
+    "backoff_s": 5,
+    "retry_on": ["timeout", "5xx", "rate_limited"],
+    "fail_loud_on": ["missing_api_key", "missing_phone_number_id", "missing_business_account_id", "unlinked_recipient", "invalid_client_id"]
+  },
+  "side_effects": [
+    "Sends a real outbound WhatsApp Business API message to the client's approver, consuming that provider's send/conversation quota and, where applicable, billed conversation cost."
+  ],
+  "notes": "This tool's own risk_level (medium) and approval_policy ('none') are deliberately lower than the gates it feeds (deploy_site and publish_x/publish_linkedin are both risk_level 'high' with a required, single-use, per-client-or-per-post approval_policy) — sending a REQUEST for approval is not itself the production-affecting action, and does not require a prior approval to invoke. The human's reply is captured by a separate inbound WhatsApp webhook (not part of this manifest) that resolves each approval_request_id in approval_request_ids to granted/denied independently; a 'reply ALL' inbound resolves every id in a post_publish_batch request independently, never as one shared grant, per policy.md's APPROVAL section."
+}

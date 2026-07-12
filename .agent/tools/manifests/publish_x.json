@@ -1,0 +1,49 @@
+{
+  "name": "publish_x",
+  "description": "Publish one client's approved, voice_qa-passed post_draft to X (Twitter) via the X API — the PRIMARY publish platform (instant pay-per-use API access, no partner review). Called by the publisher specialist only after a fresh, per-post agency_approve exists. Never publishes without approval; never batches multiple clients' posts into one call.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "publish_x"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "draft_id": { "type": "string" },
+      "text": { "type": "string", "description": "Exact post text, sourced verbatim from post_draft.text — the tool does not rewrite or truncate content." },
+      "media_assets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": { "type": { "type": "string", "enum": ["image", "video"] }, "asset_url": { "type": "string" } }
+        }
+      },
+      "approval_id": { "type": "string", "description": "The single-use approval_id authorizing this exact publish." }
+    },
+    "required": ["client_id", "draft_id", "text", "approval_id"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "draft_id": { "type": "string" },
+      "post_url": { "type": "string" },
+      "published_at": { "type": "string" },
+      "status": { "type": "string", "enum": ["published", "failed"] },
+      "error_message": { "type": "string" }
+    },
+    "required": ["client_id", "draft_id", "status"]
+  },
+  "timeout_s": 30,
+  "risk_level": "high",
+  "approval_policy": {
+    "required": true,
+    "scope": "per_post",
+    "reused_across_retries": false,
+    "reused_across_posts": false,
+    "description": "Exactly one approval (single WhatsApp reply, or one individually-recorded entry resolved from an agency_approve_batch fan-out) is required per post before this call is permitted. Never available for a post whose voice_qa_report isn't already gate_result: pass."
+  },
+  "retry_policy": { "max_attempts": 1, "backoff_s": 0, "fail_loud_on": ["missing_api_key", "missing_approval"] },
+  "allowed_agents": ["publisher"],
+  "side_effects": [
+    "Publishes a real, publicly visible post to the client's X account.",
+    "Irreversible via this tool (no unpublish/delete capability exposed)."
+  ]
+}

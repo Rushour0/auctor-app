@@ -1,0 +1,45 @@
+{
+  "name": "deploy_site",
+  "description": "Deploy one client's generated static site directory to that client's OWN Cloudflare Pages project via the Cloudflare API + Wrangler. One SEPARATE Cloudflare Pages project per client, NOT a shared project with per-client preview branches. If the client's project does not already exist, this tool first calls the Cloudflare API to create it, then deploys the built directory to it with Wrangler. Never deploys to an unapproved client (see approval_policy) and never touches another client's project. Production-affecting: creates real, publicly reachable URLs billed to the Cloudflare account, so risk_level is high and a human approval is required per client, every time, never reused across retries or across clients.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "deploy_site"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "fleet_id": { "type": "string", "description": "ID of the parent fleet run this deploy belongs to." },
+      "client_id": { "type": "string", "description": "Client being deployed. Used to derive both the client-scoped directory and the target Cloudflare Pages project name." },
+      "client_slug": { "type": "string", "description": "URL-safe slug for the client, used verbatim in the Pages project name. Must be stable across retries so re-deploys land on the SAME project, not a new one." },
+      "directory": { "type": "string", "description": "Path to the client's built static site directory (must have already passed screenshot_and_gate via voice_qa)." },
+      "build_id": { "type": "string", "description": "Idempotency/traceability key for this specific deploy attempt." }
+    },
+    "required": ["fleet_id", "client_id", "client_slug", "directory", "build_id"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "project_name": { "type": "string", "description": "The resolved Cloudflare Pages project name for this client." },
+      "project_created": { "type": "boolean", "description": "True if this call had to create the Pages project via the Cloudflare API because it did not already exist." },
+      "url": { "type": "string", "description": "The live *.pages.dev URL for this client's own project." },
+      "deployment_id": { "type": "string" },
+      "status": { "type": "string", "enum": ["success", "failed"] },
+      "error_message": { "type": "string" }
+    }
+  },
+  "timeout_s": 210,
+  "risk_level": "high",
+  "approval_policy": {
+    "required": true,
+    "scope": "per_client",
+    "reused_across_retries": false,
+    "reused_across_clients": false,
+    "description": "Exactly one agency_approve (over WhatsApp) is required per client before its deploy_site call is permitted, and that approval is single-use: it does not carry over to a retry of the same client (a repair -> re-deploy cycle requires a fresh approval) and never applies to any other client in the fleet. No batched 'approve all' path exists for site deploys."
+  },
+  "retry_policy": { "max_attempts": 1, "backoff_s": 0 },
+  "allowed_agents": ["deployer"],
+  "side_effects": [
+    "Creates a new Cloudflare Pages project via the Cloudflare API if this client's project does not already exist.",
+    "Publishes a live, publicly reachable deployment to that client's Cloudflare Pages project.",
+    "Billed to the Cloudflare account (Pages project count + bandwidth)."
+  ],
+  "notes": "Architecture: N clients => N distinct Cloudflare Pages projects, never one shared project with preview-{client_id} branches. auctor_tools.py's deploy_site command implements: (1) resolve project_name, (2) GET the project from the Cloudflare API to check existence, (3) POST to create it if absent, (4) run `wrangler pages deploy {directory} --project-name {project_name}` and parse the resulting URL/deployment id."
+}

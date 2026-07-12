@@ -1,0 +1,117 @@
+{
+  "name": "linkup_client_research",
+  "description": "Run client_id-scoped research via Linkup for a single client in the fleet, seeded from their intake (name, LinkedIn/site/resume URLs): career signals, achievement signals, and 3-5 real voice reference excerpts of the client's own writing (LinkedIn posts, blog prose, resume — never AI-generated or paraphrased). Feeds the researcher specialist's client_research artifact, which every downstream artifact (positioning_brief, ClientBrandMemory, site_copy, post_draft) traces claims and voice back to. Every returned claim is claim_status-tagged (supported/needs_source/remove) per ANTI-FABRICATION policy.md; fewer than 3 usable voice_reference_excerpts is a known automatic upstream fail at voice_qa (repair_target: researcher), so this tool always returns whatever excerpts it genuinely found even below that threshold rather than padding or paraphrasing to reach 3. Fails clearly (fail-loud, non-retryable message) when LINKUP_API_KEY is unavailable rather than silently degrading or returning empty signal arrays that could be mistaken for a genuine 'no findings' result.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "linkup_client_research"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": {
+        "type": "string",
+        "description": "Fleet client identifier this research is scoped to; threaded through to output and downstream fleet events. Never joined against another client_id's state (FLEET ISOLATION)."
+      },
+      "fleet_id": {
+        "type": "string",
+        "description": "ID of the parent fleet run this research call belongs to, recorded on the resulting fleet event."
+      },
+      "name": {
+        "type": "string",
+        "description": "Client's full name, used to seed the query and disambiguate search results."
+      },
+      "linkedin_url": {
+        "type": ["string", "null"],
+        "description": "Client's LinkedIn profile URL from intake, if known. Primary source for voice_reference_excerpts (post text) and career_signals."
+      },
+      "site_url": {
+        "type": ["string", "null"],
+        "description": "Client's personal or company site URL from intake, if known, used to widen source coverage for career/achievement signals and additional voice excerpts (blog prose)."
+      },
+      "resume_url": {
+        "type": ["string", "null"],
+        "description": "Client's resume/CV URL from intake, if known. Primary source for career_signals and achievement_signals; secondary source for voice excerpts."
+      },
+      "focus_areas": {
+        "type": "array",
+        "items": { "type": "string", "enum": ["career", "achievement", "voice"] },
+        "description": "Which research facets to run this call; defaults to all three when omitted. 'voice' targets voice_reference_excerpts collection specifically, useful on a deep retry after a voice_qa upstream fail."
+      },
+      "depth": {
+        "type": "string",
+        "enum": ["standard", "deep"],
+        "description": "Linkup search depth. 'standard' for routine intake, 'deep' for retry/escalation passes (e.g. after an upstream voice_qa fail for insufficient voice_reference_excerpts)."
+      },
+      "include_domains": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Optional domain allowlist to bias search sources (e.g. the client's own site_url, linkedin.com, the client's resume host)."
+      }
+    },
+    "required": ["client_id", "fleet_id", "name"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "career_signals": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "claim": { "type": "string" },
+            "source_url": { "type": "string" },
+            "claim_status": { "type": "string", "enum": ["supported", "needs_source", "remove"] }
+          },
+          "required": ["claim", "claim_status"]
+        }
+      },
+      "achievement_signals": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "claim": { "type": "string" },
+            "source_url": { "type": "string" },
+            "claim_status": { "type": "string", "enum": ["supported", "needs_source", "remove"] }
+          },
+          "required": ["claim", "claim_status"]
+        }
+      },
+      "voice_reference_excerpts": {
+        "type": "array",
+        "description": "Real, verbatim excerpts of the client's own writing. May legitimately contain fewer than 3 entries for a thin-source client; this tool never pads or paraphrases to reach the voice_qa minimum.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "description": "Verbatim excerpt text, never AI-generated or paraphrased." },
+            "source_url": { "type": "string" },
+            "excerpt_id": { "type": "string", "description": "Stable id (e.g. vre_1) other artifacts reference by." }
+          },
+          "required": ["text", "excerpt_id"]
+        }
+      },
+      "usable_claim_count": { "type": "integer", "description": "Researcher-facing rollup: count across career_signals + achievement_signals combined with claim_status: supported." },
+      "needs_source_count": { "type": "integer", "description": "Rollup count across career_signals + achievement_signals combined with claim_status: needs_source." },
+      "removed_count": { "type": "integer", "description": "Rollup count across career_signals + achievement_signals combined with claim_status: remove." },
+      "usable_voice_excerpt_count": { "type": "integer", "description": "Count of voice_reference_excerpts returned; must be >= 3 for voice_qa to accept downstream candidates without an automatic upstream fail." },
+      "queried_at": { "type": "string" },
+      "usage": {
+        "type": "object",
+        "properties": {
+          "tokens_in": { "type": "integer" },
+          "tokens_out": { "type": "integer" },
+          "cost_usd": { "type": "number" }
+        }
+      }
+    },
+    "required": ["client_id", "career_signals", "achievement_signals", "voice_reference_excerpts", "usable_claim_count", "needs_source_count", "removed_count", "usable_voice_excerpt_count"]
+  },
+  "allowed_agents": ["researcher"],
+  "risk_level": "low",
+  "approval_policy": "none",
+  "timeout_s": 45,
+  "retry_policy": {
+    "max_attempts": 2,
+    "backoff_s": 3,
+    "retry_on": ["timeout", "5xx", "rate_limited"],
+    "fail_loud_on": ["missing_api_key", "invalid_client_id"]
+  }
+}

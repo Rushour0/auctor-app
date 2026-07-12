@@ -1,0 +1,73 @@
+{
+  "name": "record_fleet_event",
+  "description": "Persist a fleet or per-client lifecycle event (research/position/build/QA/deploy/publish/approve/retry/error, across both the site-build and content-loop pipelines) to the fleet_events Mongo collection. client_id is optional for fleet-scoped events (e.g. fleet_started) and required for client-scoped events. Fails clearly when Mongo is not configured. Optional cost_usd rolls up into the client's per-pipeline usage and the fleet total cost.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "record_fleet_event"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "fleet_id": { "type": "string", "description": "ID of the parent fleet run this event belongs to." },
+      "client_id": { "type": "string", "description": "Client this event pertains to. Omit for fleet-level events not scoped to a single client." },
+      "pipeline": { "type": "string", "enum": ["site_build", "content_loop"], "description": "Which of the client's two pipelines this event belongs to. Omit only for fleet-level events." },
+      "event_type": {
+        "type": "string",
+        "description": "Event kind.",
+        "enum": [
+          "fleet_started",
+          "fleet_completed",
+          "client_research_completed",
+          "client_brand_memory_recorded",
+          "site_copy_completed",
+          "site_built",
+          "media_synthesis_failed",
+          "voice_qa_checked",
+          "site_deployed",
+          "deploy_failed",
+          "metrics_polled",
+          "trend_researched",
+          "post_brief_decided",
+          "post_drafted",
+          "post_published",
+          "publish_failed",
+          "engagement_collected",
+          "approval_requested",
+          "approval_granted",
+          "retry_attempted",
+          "client_blocked",
+          "awaiting_approval",
+          "human_review_requested",
+          "client_completed",
+          "error"
+        ]
+      },
+      "payload": {
+        "type": "object",
+        "description": "Free-form event detail, e.g. { build_id, draft_id, gate_result, retry_count, platform_status, error_message }.",
+        "properties": {
+          "cost_usd": {
+            "type": "number",
+            "description": "Optional per-event cost in USD (LLM tokens + tool calls attributable to this event). Rolls up into that client's per-pipeline usage and then the fleet-wide total. Omit when the event has no directly attributable spend."
+          }
+        }
+      }
+    },
+    "required": ["fleet_id", "event_type"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "event_id": { "type": "string" },
+      "fleet_id": { "type": "string" },
+      "client_id": { "type": "string" },
+      "pipeline": { "type": "string" },
+      "event_type": { "type": "string" },
+      "recorded_at": { "type": "string" }
+    }
+  },
+  "timeout_s": 20,
+  "risk_level": "low",
+  "retry_policy": { "max_attempts": 2, "backoff_s": 2 },
+  "allowed_agents": [
+    "researcher", "brand_strategist", "copywriter", "builder", "voice_qa", "deployer",
+    "metrics_researcher", "trend_researcher", "content_strategist", "ghostwriter", "publisher", "engagement_analyst"
+  ]
+}

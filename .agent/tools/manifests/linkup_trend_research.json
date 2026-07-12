@@ -1,0 +1,57 @@
+{
+  "name": "linkup_trend_research",
+  "description": "Run Linkup research for one client's industry/topic space, scoped by their ClientBrandMemory icp/brand_pillars, to surface live sourced trend signal (industry_findings, claim_status-tagged). Companion tool to viral_pattern_research, which handles structural X-post pattern extraction separately. Fails clearly when LINKUP_API_KEY is unavailable rather than silently degrading.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "linkup_trend_research"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string", "description": "Client this trend research is scoped to." },
+      "icp": { "type": "string", "description": "Client's ICP from ClientBrandMemory, used to scope the industry search." },
+      "brand_pillars": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Client's brand_pillars from ClientBrandMemory, used to narrow topic relevance."
+      },
+      "depth": { "type": "string", "enum": ["standard", "deep"] }
+    },
+    "required": ["client_id", "icp"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "industry_findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "claim": { "type": "string" },
+            "source_url": { "type": "string" },
+            "claim_status": { "type": "string", "enum": ["supported", "needs_source", "remove"] }
+          },
+          "required": ["claim", "claim_status"]
+        }
+      },
+      "queried_at": { "type": "string" },
+      "usage": {
+        "type": "object",
+        "properties": {
+          "tokens_in": { "type": "integer" },
+          "tokens_out": { "type": "integer" },
+          "cost_usd": { "type": "number" }
+        }
+      }
+    },
+    "required": ["client_id", "industry_findings"]
+  },
+  "allowed_agents": ["trend_researcher"],
+  "risk_level": "low",
+  "approval_policy": "none",
+  "timeout_s": 45,
+  "retry_policy": {
+    "max_attempts": 2,
+    "backoff_s": 3,
+    "retry_on": ["timeout", "5xx", "rate_limited"],
+    "fail_loud_on": ["missing_api_key"]
+  }
+}

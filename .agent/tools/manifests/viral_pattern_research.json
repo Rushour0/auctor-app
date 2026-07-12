@@ -1,0 +1,64 @@
+{
+  "name": "viral_pattern_research",
+  "description": "Linkup-backed research over real, currently high-engagement X posts/threads relevant to a client's space, extracting STRUCTURAL patterns only (hook style, format, length band) — never the source post's content, claims, or numbers. Output entries are permanently ineligible to carry a claim_status field; they are shapes to draft against, not evidence. Enforces the non-negotiable guardrail in policy.md: borrowing a hook/format shape is fine, borrowing clickbait's habit of vague urgency or fabricated stats is not.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "viral_pattern_research"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string", "description": "Client this pattern research is scoped to." },
+      "topic_space": { "type": "string", "description": "Client's icp/brand_pillars-derived topic space to search within." },
+      "content_pillars": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Client's ClientBrandMemory.content_pillars, used to scope which post formats are worth studying for this client's actual post types."
+      },
+      "min_engagement_threshold": {
+        "type": "integer",
+        "description": "Minimum engagement signal (platform-defined composite) a source post must clear to be considered 'proven to gain traction'."
+      }
+    },
+    "required": ["client_id", "topic_space"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "viral_pattern_findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "pattern_id": { "type": "string" },
+            "hook_style": { "type": "string" },
+            "format": { "type": "string", "enum": ["text", "text+image", "text+video", "thread"] },
+            "structural_notes": { "type": "string" },
+            "observed_post_url": { "type": "string" }
+          },
+          "required": ["pattern_id", "hook_style", "format"],
+          "not": { "required": ["claim_status"] }
+        },
+        "description": "Structure-only findings. A returned entry carrying a claim_status field is a defect in the tool implementation, not a valid output."
+      },
+      "queried_at": { "type": "string" },
+      "usage": {
+        "type": "object",
+        "properties": {
+          "tokens_in": { "type": "integer" },
+          "tokens_out": { "type": "integer" },
+          "cost_usd": { "type": "number" }
+        }
+      }
+    },
+    "required": ["client_id", "viral_pattern_findings"]
+  },
+  "allowed_agents": ["trend_researcher"],
+  "risk_level": "low",
+  "approval_policy": "none",
+  "timeout_s": 45,
+  "retry_policy": {
+    "max_attempts": 2,
+    "backoff_s": 3,
+    "retry_on": ["timeout", "5xx", "rate_limited"],
+    "fail_loud_on": ["missing_api_key"]
+  }
+}

@@ -1,0 +1,173 @@
+# Auctor Agency configuration.
+#
+# Fleet-lead shape: this agency drives N parallel per-client pipelines under one fleet run, but
+# UNLIKE Microsite Factory (single pipeline per account) each client runs TWO independent
+# pipelines: SITE-BUILD (one-shot: researcher -> brand_strategist -> copywriter -> builder ->
+# voice_qa -> deployer) and CONTENT-LOOP (recurring, self-scheduled per client via a poll/cron
+# inside service/ -- see .agent/prompts/domains/auctor/policy.md's KERNEL DEVIATION note:
+# metrics_researcher + trend_researcher (parallel) -> content_strategist -> ghostwriter ->
+# voice_qa -> publisher -> engagement_analyst). See .agent/prompts/manager.md and
+# .agent/prompts/domains/auctor/manager.md for the full two-pipeline-per-client workflow.
+#
+# COST CAPS MUST ACCOUNT FOR THE DOUBLE FAN-OUT, not just N clients: a fleet-run cost estimate
+# here is N clients x 1 site-build pass, but content-loop adds N clients x (recurring cadence
+# ticks per period) on top of that, indefinitely, for the life of every client relationship --
+# unlike Microsite Factory's one-shot-per-account shape, this fleet's real steady-state cost is
+# dominated by the RECURRING pipeline, not the one-shot one, once a cohort of clients is live.
+# The caps below size for one fleet_start's site-build wave; content-loop's per-tick cost is
+# tracked and capped separately at the ClientPipeline level (see policy.md's DATA MODEL section
+# and content_posts/fleet_events cost rollup), not folded into this file's one-shot ceiling.
+#
+# TEMPORARY MODEL OVERRIDE (set 2026-07-09, EXPIRES 2026-07-14): every role below is pinned to
+# Sonnet 5 fleet-wide per the standing global operating default -- never Opus, never Fable, for
+# any subagent or workflow agent, on any project, until the override is deleted post-2026-07-14.
+agent:
+  name: auctor-agency-lead
+  # Scaled for fleet orchestration across TWO pipelines: one fleet_start (site-build wave) plus
+  # up to N clients' worth of dispatch/poll/summarize steps for whichever pipeline(s) are active
+  # this cycle, not a single client's ~30-step single-pipeline run.
+  max_steps: 56
+  # Site-build wave: N clients x ~$2.20/client (research + position + copy + build [ElevenLabs +
+  # HeyGen calls included] + QA + deploy) matches the per-spawn subagent cap below. Content-loop
+  # ticks are NOT included in this ceiling -- they are metered per client, per cadence tick, at
+  # the ClientPipeline level, because they recur indefinitely and would make a single fixed fleet
+  # cap meaningless (see the DOUBLE FAN-OUT comment above). 44.0 is the site-build fleet-run
+  # ceiling only.
+  max_cost_usd: 44.0
+  subagent:
+    # Per-spawn cap (one specialist invocation for one client, one pipeline stage). Kept close to
+    # Microsite Factory's sibling cap even though builder/ghostwriter now embed a synthesis tool
+    # call (ElevenLabs/HeyGen/OpenAI) inside the same spawn, because those tool calls are billed
+    # via their own provider usage, not LLM tokens -- the LLM-side cost per spawn doesn't grow
+    # just because the specialist also drives a tool call.
+    max_steps: 16
+    max_cost_usd: 2.2
+  output_format: json
+  system_prompt: |
+    You are the Auctor Agency lead. Read .agent/prompts/manager.md,
+    .agent/prompts/common/communication.md, .agent/prompts/common/verification.md, and the
+    auctor domain prompts (.agent/prompts/domains/auctor/{manager.md,policy.md,artifacts.md,
+    specialists/*.md}) before acting. Given a fleet brief of clients, run TWO independent
+    pipelines per client -- a one-shot SITE-BUILD (research -> position -> copy -> build ->
+    voice_qa -> deploy) and a recurring, self-scheduled CONTENT-LOOP (metrics+trend research ->
+    strategize -> draft -> voice_qa -> publish -> analyze) -- each isolated from every other
+    client's pipelines AND from that same client's other pipeline, so one failure never blocks or
+    corrupts unrelated state. Obtain sourced client research and trend/metrics signal via Linkup
+    and GitHub (GitHub tool forthcoming, see HANDOFF-github-integration.md) when available,
+    generate an evidence-backed personal-brand site with a synthesized voice/video intro per
+    client, draft X-first (LinkedIn secondary) posts in the client's real, statistically verified
+    voice, gate every candidate through voice_qa (structural_voice_match,
+    lexical_fingerprint_match, claim_sourcing) before it may ship, and require one un-batched
+    agency_approve over WhatsApp per site deploy and per post publish (a WhatsApp batch fan-out
+    is a review convenience that still records one approval per post, never a shared one). Never
+    invent claims, achievements, or stats for a real client's public reputation; never deploy or
+    publish without that client's own approval; never let one client's positioning or voice leak
+    into another's memory; never let a viral-pattern finding be cited as a claim. Report progress
+    as a two-pipeline fleet status roll-up (site-build bucket counts + content-loop bucket counts,
+    separately) by default; only expand to full per-client detail when asked about a specific
+    client by name.
+
+llm:
+  provider: anthropic
+  model: sonnet
+  api_key_env: ANTHROPIC_API_KEY
+  max_tokens: 3000
+  roles:
+    decompose:
+      # Runs once per fleet_start to split the brief into per-client jobs, AND once per
+      # content-loop cadence tick to decide which clients' loops are due this cycle -- still a
+      # single fleet-scoped (or tick-scoped) call each time, so keep it capable; fan-out planning
+      # quality here sets the ceiling for every client's pipeline decisions downstream.
+      provider: anthropic
+      model: sonnet
+      api_key_env: ANTHROPIC_API_KEY
+      max_tokens: 1200
+    narrator:
+      # Fires far more often than a single-pipeline fleet's narrator: once per client per
+      # pipeline-status update, across TWO pipelines, and content-loop's narrator calls recur
+      # indefinitely on every cadence tick rather than firing once per fleet run. Capped at <=90
+      # tokens specifically because the two-pipeline roll-up narration (manager.md's "Fleet status
+      # roll-up") is terse by design -- it summarizes two bucketed counts, not full per-client or
+      # per-pipeline prose.
+      provider: anthropic
+      model: sonnet
+      api_key_env: ANTHROPIC_API_KEY
+      max_tokens: 90
+    specialist:
+      # Sonnet 5 pinned fleet-wide per the standing global override, but flagged here for cost
+      # awareness: a site-build wave invokes 6 specialists (researcher/brand_strategist/
+      # copywriter/builder/voice_qa/deployer) x N clients once; a content-loop cadence tick
+      # invokes 7 specialists (metrics_researcher/trend_researcher/content_strategist/
+      # ghostwriter/voice_qa/publisher/engagement_analyst) x N clients EVERY tick, indefinitely.
+      # At steady state (a live client cohort past its site-build wave) this role's total call
+      # volume is dominated by the recurring pipeline, not the one-shot one -- max_tokens is held
+      # tight (every artifact in artifacts.md is short and structured) rather than left at the
+      # top-level 3000 default, precisely because a recurring role should not also carry an
+      # unbounded per-call token budget.
+      provider: anthropic
+      model: sonnet
+      api_key_env: ANTHROPIC_API_KEY
+      max_tokens: 1600
+
+tools:
+  manifest_dir:
+    - builtin
+    - .agent/tools/manifests
+  enabled:
+    - read_file
+    - write_file
+    - edit_file
+    - list_dir
+    - python_exec
+    - batch
+    - spawn_subagent
+    - linkup_client_research
+    - linkup_trend_research
+    - viral_pattern_research
+    - synthesize_voice
+    - synthesize_video_intro
+    - synthesize_image
+    - synthesize_video
+    - screenshot_and_gate
+    - deploy_site
+    - publish_x
+    - publish_linkedin
+    - send_whatsapp_approval
+    - record_fleet_event
+    # github_activity_research is NOT enabled here yet -- forthcoming handoff, see
+    # HANDOFF-github-integration.md at the repo root. Do not add it to this list until its
+    # manifest actually exists under .agent/tools/manifests/.
+  sandbox_root: .
+  result_format: toon
+  mcp_servers: []
+
+memory:
+  backend: sqlite
+  collection: auctor
+  sqlite_path: .fabri/memory.db
+  top_k: 6
+  guideline_max_tokens: 50
+  retrieval_strategy: hybrid
+  rrf_k: 20
+  temporal_decay: true
+  # Longer half-life than Microsite Factory's 30-day default: ClientBrandMemory and
+  # engagement_memory are meant to inform decisions across an indefinitely recurring
+  # content-loop, not just within one fleet run -- a 90-day half-life keeps older-but-still-live
+  # positioning/engagement guidance from decaying out of retrieval too quickly for a
+  # months-long client relationship.
+  temporal_half_life_days: 90.0
+  importance_weight: 0.2
+  domain_routing: true
+  record_postmortems: true
+
+# Fabri 0.11.0 keeps JSONL as the source of truth and can export finished traces to any OTLP
+# backend. Environment variables override these fields. Per-client, per-pipeline traces are
+# nested under their parent fleet_run_id trace, further split by `pipeline` (site_build |
+# content_loop) so a client's two pipelines remain independently inspectable without losing the
+# fleet-level rollup -- mirrors Microsite Factory's per-account nesting, one level deeper.
+observability:
+  otlp_endpoint: null
+  otlp_protocol: http
+  otlp_headers: {}
+  otlp_insecure: false
+  service_name: auctor-agency

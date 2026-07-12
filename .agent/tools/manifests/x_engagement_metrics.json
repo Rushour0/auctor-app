@@ -1,0 +1,45 @@
+{
+  "name": "x_engagement_metrics",
+  "description": "Fetch real engagement metrics (impressions, likes, reposts, replies, bookmarks) for one client's already-published X/Twitter post via the X API. Read-only. Fails loud (fail-loud, non-retryable message) when the post_id/tweet_id is invalid or the client's X credentials are missing rather than fabricating a metrics snapshot.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "x_engagement_metrics"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string", "description": "Client this engagement pull is scoped to." },
+      "draft_id": { "type": "string", "description": "The post_draft/published_post id this metrics pull is for; threaded into the returned engagement_memory entry." },
+      "platform_post_id": { "type": "string", "description": "The X/Twitter platform's own id for the published tweet, from published_post.platforms.x.platform_post_id." }
+    },
+    "required": ["client_id", "draft_id", "platform_post_id"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "draft_id": { "type": "string" },
+      "platform": { "type": "string", "const": "x" },
+      "impressions": { "type": "integer" },
+      "likes": { "type": "integer" },
+      "reposts": { "type": "integer" },
+      "replies": { "type": "integer" },
+      "bookmarks": { "type": "integer" },
+      "captured_at": { "type": "string" },
+      "status": { "type": "string", "enum": ["success", "failed"] },
+      "error_message": { "type": "string" },
+      "usage": {
+        "type": "object",
+        "properties": { "cost_usd": { "type": "number" } }
+      }
+    },
+    "required": ["client_id", "draft_id", "platform", "status"]
+  },
+  "timeout_s": 30,
+  "risk_level": "low",
+  "approval_policy": "none",
+  "retry_policy": {
+    "max_attempts": 2,
+    "backoff_s": 3,
+    "retry_on": ["timeout", "5xx", "rate_limited"],
+    "fail_loud_on": ["missing_api_key", "invalid_platform_post_id"]
+  },
+  "allowed_agents": ["engagement_analyst"]
+}

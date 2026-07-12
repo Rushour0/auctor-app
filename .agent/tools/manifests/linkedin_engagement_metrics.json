@@ -1,0 +1,44 @@
+{
+  "name": "linkedin_engagement_metrics",
+  "description": "Fetch real engagement metrics (impressions, reactions, comments, reshares) for one client's already-published LinkedIn post via the LinkedIn API. Read-only, secondary-platform (Slice 6a). Fails loud when the post's platform_post_id is invalid or the client's LinkedIn credentials are missing rather than fabricating a metrics snapshot.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "linkedin_engagement_metrics"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string", "description": "Client this engagement pull is scoped to." },
+      "draft_id": { "type": "string", "description": "The post_draft/published_post id this metrics pull is for; threaded into the returned engagement_memory entry." },
+      "platform_post_id": { "type": "string", "description": "LinkedIn's own id for the published post, from published_post.platforms.linkedin.platform_post_id." }
+    },
+    "required": ["client_id", "draft_id", "platform_post_id"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "draft_id": { "type": "string" },
+      "platform": { "type": "string", "const": "linkedin" },
+      "impressions": { "type": "integer" },
+      "reactions": { "type": "integer" },
+      "comments": { "type": "integer" },
+      "reshares": { "type": "integer" },
+      "captured_at": { "type": "string" },
+      "status": { "type": "string", "enum": ["success", "failed"] },
+      "error_message": { "type": "string" },
+      "usage": {
+        "type": "object",
+        "properties": { "cost_usd": { "type": "number" } }
+      }
+    },
+    "required": ["client_id", "draft_id", "platform", "status"]
+  },
+  "timeout_s": 30,
+  "risk_level": "low",
+  "approval_policy": "none",
+  "retry_policy": {
+    "max_attempts": 2,
+    "backoff_s": 3,
+    "retry_on": ["timeout", "5xx", "rate_limited"],
+    "fail_loud_on": ["missing_api_key", "invalid_platform_post_id"]
+  },
+  "allowed_agents": ["engagement_analyst"]
+}

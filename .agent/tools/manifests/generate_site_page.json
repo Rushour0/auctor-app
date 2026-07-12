@@ -1,0 +1,52 @@
+{
+  "name": "generate_site_page",
+  "description": "Render one client's personal-brand site from site_copy + positioning_brief into a static directory (HTML/CSS/JS, no build step) under that client's OWN preview directory. Owns this client's preview-directory naming (builder's working directory for the run is exactly the preview_dir this tool returns for this client_id — nowhere else). Never reads or writes another client's directory. Purely local file generation — no external side effect, no approval required. Fails loud (does not silently degrade) if site_copy or positioning_brief is missing required fields per artifacts.md rather than rendering a partial page.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "generate_site_page"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "fleet_id": { "type": "string", "description": "ID of the parent fleet run this build belongs to." },
+      "client_id": { "type": "string", "description": "Client this page is being generated for." },
+      "site_copy": { "type": "object", "description": "The site_copy artifact (bio, headline, about, story, claim_refs[]) per artifacts.md — verbatim." },
+      "positioning_brief": { "type": "object", "description": "The positioning_brief / ClientBrandMemory snapshot this build is drafted against, for template selection (tone, cta)." },
+      "media_assets": {
+        "type": "array",
+        "items": { "type": "object" },
+        "description": "Optional audio/video intro assets already synthesized (via synthesize_voice / synthesize_video_intro) to embed in the rendered page."
+      }
+    },
+    "required": ["fleet_id", "client_id", "site_copy", "positioning_brief"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "preview_dir": { "type": "string", "description": "The client-scoped directory the rendered static site was written to; builder's working directory for the rest of this run." },
+      "entry_file": { "type": "string", "description": "Path to the rendered index.html within preview_dir." },
+      "status": { "type": "string", "enum": ["success", "failed"] },
+      "error_message": { "type": "string" },
+      "usage": {
+        "type": "object",
+        "properties": {
+          "tokens_in": { "type": "integer" },
+          "tokens_out": { "type": "integer" },
+          "cost_usd": { "type": "number" }
+        }
+      }
+    },
+    "required": ["client_id", "preview_dir", "status"]
+  },
+  "timeout_s": 60,
+  "risk_level": "low",
+  "approval_policy": "none",
+  "retry_policy": {
+    "max_attempts": 2,
+    "backoff_s": 2,
+    "retry_on": ["timeout", "5xx"],
+    "fail_loud_on": ["missing_required_field", "invalid_client_id"]
+  },
+  "allowed_agents": ["builder"],
+  "side_effects": [
+    "Writes files to this client's own local preview directory only."
+  ]
+}

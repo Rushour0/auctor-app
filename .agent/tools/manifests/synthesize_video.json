@@ -1,0 +1,71 @@
+{
+  "name": "synthesize_video",
+  "description": "Synthesize a short post-format video for one client via HeyGen, from a script grounded verbatim in that post_draft's already-sourced text (never invented, never paraphrased into new claims by the tool). Called by the ghostwriter specialist itself, inside the content-loop pipeline, only when post_brief.format == 'text+video' — not a separate specialist role. Client-scoped and non-batchable: one call always produces exactly one client's one post's video, never a shared or cross-client render. Distinct from synthesize_video_intro (site-build's one-time, per-client intro clip called by builder); this call is per-post and recurring, called once per content-loop cycle that needs video. Fails clearly (fail-loud, non-retryable message identifying HEYGEN_API_KEY as missing) when the HeyGen credential is unavailable, rather than silently degrading to a stub asset or a cached/placeholder video that would then be treated as a legitimate media_asset downstream.",
+  "command": ["python3", ".agent/tools/auctor_tools.py", "synthesize_video"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": {
+        "type": "string",
+        "description": "Client this video belongs to; threaded through to output and downstream fleet events. This call and its output must never be reused across a different client_id."
+      },
+      "draft_id": {
+        "type": "string",
+        "description": "post_draft.draft_id this video is being synthesized for; used for correlation so voice_qa and publisher can trace the resulting media_asset back to the exact draft it was generated against."
+      },
+      "script_text": {
+        "type": "string",
+        "description": "Exact script to synthesize, sourced verbatim from post_draft.text — never invented, expanded, or embellished by the tool. Any claim in this text must already trace to a claim_status:\"supported\" finding upstream; this tool does not re-check sourcing, that is voice_qa's job."
+      },
+      "avatar_ref": {
+        "type": "string",
+        "description": "Existing HeyGen avatar/likeness reference for this client, if already provisioned. Omit if not yet set up, in which case the tool falls back to a generic HeyGen avatar rather than failing the call."
+      },
+      "voice_ref": {
+        "type": "string",
+        "description": "Optional existing ElevenLabs/HeyGen voice reference for this client, if already provisioned, so the video's narration matches the client's established synthesized voice from site-build. Omit to fall back to HeyGen's default voice for the chosen avatar."
+      }
+    },
+    "required": ["client_id", "draft_id", "script_text"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "client_id": { "type": "string" },
+      "draft_id": { "type": "string" },
+      "asset_url": {
+        "type": "string",
+        "description": "Hosted URL of the rendered video asset; this is the value ghostwriter places into post_draft.media_assets[].asset_url with source_tool:\"synthesize_video\"."
+      },
+      "duration_s": {
+        "type": "number",
+        "description": "Rendered video duration in seconds, as reported by HeyGen."
+      },
+      "status": { "type": "string", "enum": ["ok", "error"] },
+      "error_message": {
+        "type": "string",
+        "description": "Populated only when status == \"error\"; for a missing-credential failure this is the fail-loud, non-retryable message naming HEYGEN_API_KEY explicitly."
+      },
+      "usage": {
+        "type": "object",
+        "description": "Rolls up into post_draft.usage and then ClientPipeline.usage per the fleet usage-rollup rule; tokens_in/tokens_out are 0 for this tool (HeyGen bills per render, not per token) and are present only for shape-consistency with every other usage-tracked artifact/tool in this catalogue.",
+        "properties": {
+          "tokens_in": { "type": "integer" },
+          "tokens_out": { "type": "integer" },
+          "cost_usd": { "type": "number", "description": "Actual HeyGen render cost for this call, in USD." }
+        }
+      }
+    },
+    "required": ["client_id", "draft_id", "asset_url", "status"]
+  },
+  "allowed_agents": ["ghostwriter"],
+  "risk_level": "low",
+  "approval_policy": "none",
+  "timeout_s": 120,
+  "retry_policy": {
+    "max_attempts": 1,
+    "backoff_s": 0,
+    "retry_on": ["timeout", "5xx"],
+    "fail_loud_on": ["missing_api_key", "invalid_client_id", "invalid_draft_id"]
+  }
+}
