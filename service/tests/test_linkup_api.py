@@ -1,11 +1,24 @@
 from datetime import datetime, timezone
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from service.app import main
+from service.app.routers.auth import require_operator
 from service.auctor.collectors.linkup import LinkupAPIError
 from service.auctor.models import CollectorResult
+
+
+async def _fake_operator() -> dict:
+    return {"login": "octocat", "gh_id": 1}
+
+
+@pytest.fixture(autouse=True)
+def _authenticated_operator():
+    main.app.dependency_overrides[require_operator] = _fake_operator
+    yield
+    main.app.dependency_overrides.pop(require_operator, None)
 
 
 class FakeLinkupCollector:

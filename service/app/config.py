@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     twitter_api_secret: str = ""
     twitter_redirect_uri: str = "http://localhost:8000/api/x/oauth/callback"
 
+    # GitHub operator LOGIN — OAuth 2.0 for gating the four frontend pages behind a
+    # sign-in. This is a SEPARATE GitHub OAuth App from service/auctor/config.py's
+    # github_client_id/secret, which is the data-COLLECTOR app connection. Do not
+    # conflate the two. Blank by default so Settings loads cleanly with no .env values;
+    # any code path that actually performs operator login must fail loud at call time.
+    github_login_client_id: str = ""
+    github_login_client_secret: str = ""
+    github_login_redirect_uri: str = "http://localhost:8000/api/auth/github/callback"
+    operator_session_secret: str = ""
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]

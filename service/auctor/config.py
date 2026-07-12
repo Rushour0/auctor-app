@@ -37,7 +37,12 @@ class Settings(BaseSettings):
     product_metrics_ingest_secret: str = ""
 
     scheduler_interval_hours: int = 6
+    scheduler_interval_hours_x: int | None = None
+    scheduler_interval_hours_linkedin: int | None = None
     scheduler_batch_size: int = 100
+
+    metrics_webhook_url: str = ""
+    metrics_webhook_timeout_seconds: float = 10.0
 
 
 @lru_cache

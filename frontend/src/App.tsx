@@ -1,41 +1,44 @@
-import { useEffect, useState } from "react";
+// Router shell: GitHub-operator login gate over the four top-level pages.
+//
+// BrowserRouter is provided by main.tsx, so this component is purely the route
+// table. The structure is deliberately flat:
+//
+//   /login                     -> the standalone GitHub-OAuth screen (NOT a tab)
+//   (RequireAuth)              -> session gate; unauthenticated -> /login
+//     (AppShell)              -> persistent header + four-tab nav + <Outlet/>
+//       index / conversations -> Conversations
+//       crons                 -> Crons
+//       posts                 -> Posts
+//       metrics               -> Metrics
+//   *                          -> bounce unknown paths back to the index
+//
+// There are EXACTLY four tabs — Login lives outside AppShell so it is a screen,
+// not a fifth nav destination. This unit owns only the routing + gate wiring;
+// AppShell and the four page components are authored by their own units.
 
-type Health = { status: string; mongo: boolean };
-type Version = { auctor: string; env: string };
+import { Routes, Route, Navigate } from "react-router-dom";
+import Login from "./auth/Login";
+import RequireAuth from "./auth/RequireAuth";
+import AppShell from "./components/AppShell";
+import Conversations from "./pages/Conversations";
+import Crons from "./pages/Crons";
+import Posts from "./pages/Posts";
+import Metrics from "./pages/Metrics";
 
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [version, setVersion] = useState<Version | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    Promise.all([
-      fetch("/health").then((r) => r.json()),
-      fetch("/version").then((r) => r.json()),
-    ])
-      .then(([h, v]) => {
-        setHealth(h);
-        setVersion(v);
-      })
-      .catch((e) => setError(String(e)));
-  }, []);
-
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "3rem", maxWidth: 640 }}>
-      <h1>Auctor workspace</h1>
-      <p>Control-plane scaffold — the fleet composer/runs panel lands with Slice 1.</p>
-      {error && <p style={{ color: "crimson" }}>API unreachable: {error}</p>}
-      {version && (
-        <p>
-          version <code>{version.auctor}</code> · env <code>{version.env}</code>
-        </p>
-      )}
-      {health && (
-        <p>
-          service: <code>{health.status}</code> · mongo:{" "}
-          <code>{health.mongo ? "connected" : "unreachable"}</code>
-        </p>
-      )}
-    </main>
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<AppShell />}>
+          <Route index element={<Conversations />} />
+          <Route path="conversations" element={<Conversations />} />
+          <Route path="crons" element={<Crons />} />
+          <Route path="posts" element={<Posts />} />
+          <Route path="metrics" element={<Metrics />} />
+        </Route>
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }

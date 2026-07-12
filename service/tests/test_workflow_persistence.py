@@ -22,9 +22,20 @@ def nested_set(document: dict[str, Any], path: str, value: Any) -> None:
     target[parts[-1]] = value
 
 
+def dotted_get(document: dict[str, Any], key: str) -> Any:
+    actual: Any = document
+    for part in key.split("."):
+        if not isinstance(actual, dict):
+            return None
+        actual = actual.get(part)
+        if actual is None:
+            return None
+    return actual
+
+
 def matches(document: dict[str, Any], query: dict[str, Any]) -> bool:
     for key, expected in query.items():
-        actual = document.get(key)
+        actual = dotted_get(document, key)
         if isinstance(expected, dict):
             if "$lte" in expected and not (actual is not None and actual <= expected["$lte"]):
                 return False
@@ -237,3 +248,51 @@ def test_scheduler_enqueues_each_due_window_once() -> None:
     assert workflow.pending_triggers("workspace-1") == first
     workflow.acknowledge_trigger("workspace-1", first[0]["trigger_id"], "completed")
     assert workflow.pending_triggers("workspace-1") == []
+
+
+def test_x_and_linkedin_cadences_advance_independently() -> None:
+    workflow = store()
+    workflow.start_fleet(intake())
+    due = datetime(2026, 7, 12, 6, tzinfo=timezone.utc)
+    workflow.schedule_content_loop("workspace-1", "client-1", due)
+    content_loop = workflow.db.client_pipelines.documents[1]
+
+    first_x = workflow.enqueue_due_content_loops(
+        workspace_id="workspace-1", now=due, interval_hours=6, platform="x"
+    )
+    second_x = workflow.enqueue_due_content_loops(
+        workspace_id="workspace-1", now=due, interval_hours=6, platform="x"
+    )
+    linkedin = workflow.enqueue_due_content_loops(
+        workspace_id="workspace-1", now=due, interval_hours=6, platform="linkedin"
+    )
+
+    assert len(first_x) == 1
+    assert second_x == []
+    assert len(linkedin) == 1
+    assert first_x[0]["trigger_id"] == "client-1:content_loop:x:2026-07-12T06:00:00+00:00"
+    assert first_x[0]["platform"] == "x"
+    assert linkedin[0]["trigger_id"] == "client-1:content_loop:linkedin:2026-07-12T06:00:00+00:00"
+    assert linkedin[0]["platform"] == "linkedin"
+    assert content_loop["platform_next_check"]["x"] == datetime(
+        2026, 7, 12, 12, tzinfo=timezone.utc
+    )
+
+
+def test_generic_platform_none_path_unchanged() -> None:
+    workflow = store()
+    workflow.start_fleet(intake())
+    due = datetime(2026, 7, 12, 6, tzinfo=timezone.utc)
+    workflow.schedule_content_loop("workspace-1", "client-1", due)
+    content_loop = workflow.db.client_pipelines.documents[1]
+
+    triggers = workflow.enqueue_due_content_loops(
+        workspace_id="workspace-1", now=due, interval_hours=6
+    )
+
+    assert len(triggers) == 1
+    assert triggers[0]["trigger_id"] == "client-1:content_loop:2026-07-12T06:00:00+00:00"
+    assert "platform" not in triggers[0]
+    assert content_loop["next_content_check_at"] == datetime(
+        2026, 7, 12, 12, tzinfo=timezone.utc
+    )

@@ -279,20 +279,25 @@ class WorkflowStore:
         now: datetime | None = None,
         interval_hours: int = 6,
         batch_size: int = 100,
+        platform: Literal["x", "linkedin"] | None = None,
     ) -> list[dict[str, Any]]:
-        """Atomically advance due pipelines and enqueue one trigger per cadence window."""
+        """Atomically advance due pipelines and enqueue one trigger per cadence window.
+
+        When ``platform`` is set the cadence is tracked on a per-platform sub-doc field
+        ``platform_next_check.<platform>`` so ``x`` and ``linkedin`` advance independently;
+        when it is ``None`` the generic flat ``next_content_check_at`` cadence is used.
+        """
         current = (now or utc_now()).astimezone(timezone.utc)
+        field = f"platform_next_check.{platform}" if platform else "next_content_check_at"
         due_query: dict[str, Any] = {
             "pipeline": "content_loop",
             "status": "active",
-            "next_content_check_at": {"$lte": current},
+            field: {"$lte": current},
         }
         if workspace_id:
             due_query["workspace_id"] = workspace_id
         candidates = list(
-            self.db.client_pipelines.find(due_query, {"_id": 0}).sort(
-                "next_content_check_at", ASCENDING
-            )
+            self.db.client_pipelines.find(due_query, {"_id": 0}).sort(field, ASCENDING)
         )[: max(1, min(batch_size, 1000))]
         enqueued: list[dict[str, Any]] = []
         next_check = current + timedelta(hours=max(1, interval_hours))
@@ -303,16 +308,19 @@ class WorkflowStore:
                 "client_id": candidate["client_id"],
                 "pipeline": "content_loop",
                 "status": "active",
-                "next_content_check_at": {"$lte": current},
+                field: {"$lte": current},
             }
             claimed = self.db.client_pipelines.find_one_and_update(
                 identity,
-                {"$set": {"next_content_check_at": next_check, "updated_at": current}},
+                {"$set": {field: next_check, "updated_at": current}},
                 return_document=ReturnDocument.AFTER,
             )
             if claimed is None:
                 continue
-            trigger_id = f"{candidate['client_id']}:content_loop:{window}"
+            if platform:
+                trigger_id = f"{candidate['client_id']}:content_loop:{platform}:{window}"
+            else:
+                trigger_id = f"{candidate['client_id']}:content_loop:{window}"
             trigger = {
                 "workspace_id": candidate["workspace_id"],
                 "fleet_id": candidate["fleet_id"],
@@ -325,6 +333,8 @@ class WorkflowStore:
                 "next_content_check_at": next_check,
                 "created_at": current,
             }
+            if platform is not None:
+                trigger["platform"] = platform
             result = self.db.workflow_triggers.update_one(
                 {"workspace_id": candidate["workspace_id"], "trigger_id": trigger_id},
                 {"$setOnInsert": trigger},
@@ -363,6 +373,8 @@ class WorkflowStore:
                 "$set": {
                     "status": "active",
                     "next_content_check_at": scheduled_for,
+                    "platform_next_check.x": scheduled_for,
+                    "platform_next_check.linkedin": scheduled_for,
                     "updated_at": now,
                 }
             },
@@ -383,6 +395,40 @@ class WorkflowStore:
         return list(
             self.db.workflow_triggers.find(query, {"_id": 0}).sort("scheduled_for", ASCENDING)
         )[: max(1, min(limit, 1000))]
+
+    def list_triggers(self, workspace_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        """Every trigger regardless of status, newest-first — the Crons page's full queue view
+        (``pending_triggers`` above is pending-only, oldest-first, for the scheduler's own poll)."""
+        query: dict[str, Any] = {}
+        if workspace_id:
+            query["workspace_id"] = workspace_id
+        return list(
+            self.db.workflow_triggers.find(query, {"_id": 0})
+            .sort("scheduled_for", DESCENDING)
+            .limit(max(1, min(limit, 1000)))
+        )
+
+    def list_events(self, workspace_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        """Recent fleet_events, newest-first — the Conversations feed."""
+        query: dict[str, Any] = {}
+        if workspace_id:
+            query["workspace_id"] = workspace_id
+        return list(
+            self.db.fleet_events.find(query, {"_id": 0})
+            .sort("recorded_at", DESCENDING)
+            .limit(max(1, min(limit, 1000)))
+        )
+
+    def list_posts(self, workspace_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        """Recent content_posts, newest-first — the Posts page's flat list contract."""
+        query: dict[str, Any] = {}
+        if workspace_id:
+            query["workspace_id"] = workspace_id
+        return list(
+            self.db.content_posts.find(query, {"_id": 0})
+            .sort("updated_at", DESCENDING)
+            .limit(max(1, min(limit, 1000)))
+        )
 
     def acknowledge_trigger(
         self, workspace_id: str, trigger_id: str, status: Literal["running", "completed", "failed"]

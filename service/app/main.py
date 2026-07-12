@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -20,6 +20,10 @@ from service.auctor.workflow import (
 )
 
 from .config import settings
+from .routers.auth import require_operator, router as auth_router
+from .routers.conversations import router as conversations_router
+from .routers.metrics import router as metrics_router
+from .routers.posts import router as posts_router
 from .routers.x_oauth import router as x_oauth_router
 
 VERSION = "0.0.1"
@@ -44,6 +48,10 @@ app.add_middleware(
 )
 
 app.include_router(x_oauth_router)
+app.include_router(auth_router)
+app.include_router(conversations_router)
+app.include_router(metrics_router)
+app.include_router(posts_router)
 
 
 class LinkupSyncRequest(BaseModel):
@@ -89,13 +97,13 @@ async def version() -> dict:
 
 
 @app.get("/api/fleets")
-async def list_fleets() -> dict:
+async def list_fleets(operator: dict = Depends(require_operator)) -> dict:
     fleets = await app.state.db.fleet_runs.find({}, {"_id": 0}).to_list(length=100)
     return {"fleets": fleets}
 
 
 @app.post("/api/workflows/fleets")
-async def start_fleet(intake: FleetIntake) -> dict:
+async def start_fleet(intake: FleetIntake, operator: dict = Depends(require_operator)) -> dict:
     """Create an idempotent fleet intake and both pipeline records per client."""
     try:
         return await run_in_threadpool(_workflow_store().start_fleet, intake)
@@ -104,7 +112,9 @@ async def start_fleet(intake: FleetIntake) -> dict:
 
 
 @app.post("/api/workflows/artifacts")
-async def save_workflow_artifact(artifact: WorkflowArtifact) -> dict:
+async def save_workflow_artifact(
+    artifact: WorkflowArtifact, operator: dict = Depends(require_operator)
+) -> dict:
     """Persist a versioned specialist artifact and advance its pipeline pointer."""
     try:
         return await run_in_threadpool(_workflow_store().save_artifact, artifact)
@@ -113,32 +123,96 @@ async def save_workflow_artifact(artifact: WorkflowArtifact) -> dict:
 
 
 @app.post("/api/workflows/events")
-async def record_workflow_event(event: WorkflowEvent) -> dict:
+async def record_workflow_event(
+    event: WorkflowEvent, operator: dict = Depends(require_operator)
+) -> dict:
     """Persist one idempotent lifecycle event and its pipeline transition."""
     return await run_in_threadpool(_workflow_store().record_event, event)
 
 
+@app.get("/api/workflows/events")
+async def list_workflow_events(
+    workspace_id: str | None = None,
+    limit: int = 100,
+    operator: dict = Depends(require_operator),
+) -> list[dict]:
+    """Conversations feed — recent fleet_events, newest-first."""
+    return await run_in_threadpool(_workflow_store().list_events, workspace_id, limit)
+
+
+class TriggerAck(BaseModel):
+    workspace_id: str = Field(min_length=1)
+    trigger_id: str = Field(min_length=1)
+    status: Literal["running", "completed", "failed"]
+
+
+@app.get("/api/workflows/triggers")
+async def list_workflow_triggers(
+    workspace_id: str | None = None,
+    limit: int = 100,
+    operator: dict = Depends(require_operator),
+) -> list[dict]:
+    """Crons page — every scheduled content-loop trigger, newest-first."""
+    return await run_in_threadpool(_workflow_store().list_triggers, workspace_id, limit)
+
+
+@app.post("/api/workflows/triggers/ack")
+async def ack_workflow_trigger(
+    ack: TriggerAck, operator: dict = Depends(require_operator)
+) -> dict:
+    """Move a pending trigger to running/completed/failed."""
+    try:
+        return await run_in_threadpool(
+            _workflow_store().acknowledge_trigger, ack.workspace_id, ack.trigger_id, ack.status
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get("/api/workflows/posts")
+async def list_workflow_posts(
+    workspace_id: str | None = None,
+    limit: int = 100,
+    operator: dict = Depends(require_operator),
+) -> list[dict]:
+    """Posts page — recent content_posts, newest-first, flat-array contract."""
+    return await run_in_threadpool(_workflow_store().list_posts, workspace_id, limit)
+
+
 @app.put("/api/workflows/approvals/{approval_id}")
-async def save_approval(approval_id: str, approval: ApprovalRecord) -> dict:
+async def save_approval(
+    approval_id: str, approval: ApprovalRecord, operator: dict = Depends(require_operator)
+) -> dict:
     if approval_id != approval.approval_id:
         raise HTTPException(status_code=400, detail="approval_id path/body mismatch")
     return await run_in_threadpool(_workflow_store().save_approval, approval)
 
 
 @app.put("/api/workflows/posts/{post_id}/platforms/{platform}")
-async def save_publish_result(post_id: str, platform: str, publish: PublishRecord) -> dict:
+async def save_publish_result(
+    post_id: str,
+    platform: str,
+    publish: PublishRecord,
+    operator: dict = Depends(require_operator),
+) -> dict:
     if post_id != publish.post_id or platform != publish.platform:
         raise HTTPException(status_code=400, detail="post/platform path/body mismatch")
     return await run_in_threadpool(_workflow_store().save_publish, publish)
 
 
 @app.get("/api/workflows/status/{workspace_id}")
-async def workflow_status(workspace_id: str, fleet_id: str | None = None) -> dict:
+async def workflow_status(
+    workspace_id: str,
+    fleet_id: str | None = None,
+    operator: dict = Depends(require_operator),
+) -> dict:
     return await run_in_threadpool(_workflow_store().status, workspace_id, fleet_id)
 
 
 @app.post("/api/integrations/linkup/verify")
-async def verify_linkup(workspace_id: str) -> dict:
+async def verify_linkup(
+    workspace_id: str, operator: dict = Depends(require_operator)
+) -> dict:
     """Verify Linkup credentials without consuming a search request."""
     try:
         return await run_in_threadpool(LinkupCollector().verify_authentication, workspace_id)
@@ -147,7 +221,9 @@ async def verify_linkup(workspace_id: str) -> dict:
 
 
 @app.post("/api/integrations/linkup/sync")
-async def sync_linkup(request: LinkupSyncRequest) -> dict:
+async def sync_linkup(
+    request: LinkupSyncRequest, operator: dict = Depends(require_operator)
+) -> dict:
     """Collect current industry sources and persist their provenance in MongoDB."""
     try:
         result = await run_in_threadpool(
