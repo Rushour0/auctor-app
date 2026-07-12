@@ -65,6 +65,12 @@ def summarize_event(event: dict) -> dict:
 
     Resolution order for ``message_type``/``text``:
 
+    0. ``payload.approval_id`` present AND ``outcome == "blocked"`` -> ``approval_request``,
+       regardless of ``event_type``. ContentAgencyRunner (service/auctor/runner.py) records its
+       approval-gate step as ``event_type: "stage.blocked"`` (the generic ``f"stage.{outcome}"``
+       convention every stage uses), which never matches EVENT_MESSAGE_MAP by name — without this
+       rule every real approval-blocked run would render as a generic 'progress' message and the
+       Conversations page's Approve button would never appear for a real run.
     1. Known ``event_type`` -> its ``EVENT_MESSAGE_MAP`` entry.
     2. Unknown ``event_type`` but ``payload.status`` refines it: ``failed`` -> ``run_failed``,
        ``completed`` -> ``run_completed``.
@@ -75,7 +81,9 @@ def summarize_event(event: dict) -> dict:
     event_type = event.get("event_type") or "progress"
     payload = event.get("payload") or {}
 
-    if event_type in EVENT_MESSAGE_MAP:
+    if payload.get("approval_id") and event.get("outcome") == "blocked":
+        message_type, default_text = EVENT_MESSAGE_MAP["approval_requested"]
+    elif event_type in EVENT_MESSAGE_MAP:
         message_type, default_text = EVENT_MESSAGE_MAP[event_type]
     else:
         status = payload.get("status")

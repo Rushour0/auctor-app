@@ -93,6 +93,34 @@ def test_summarize_unknown_event_status_completed_refines_to_run_completed():
     assert msg["message_type"] == "run_completed"
 
 
+def test_summarize_stage_blocked_with_approval_id_maps_to_approval_request():
+    """Regression test: ContentAgencyRunner records its approval-gate step as
+    event_type "stage.blocked" (the generic f"stage.{outcome}" every stage uses),
+    which never matches EVENT_MESSAGE_MAP by name. Without the outcome+approval_id
+    override, this — the actual shape every real content-loop run produces — would
+    render as a generic 'progress' message and the Conversations page's Approve
+    button would never appear."""
+    msg = summarize_event(
+        {
+            "event_type": "stage.blocked",
+            "outcome": "blocked",
+            "idempotency_key": "run_1:approval:1:blocked",
+            "payload": {"approval_id": "approval_1", "artifact_id": "draft_1"},
+        }
+    )
+    assert msg["message_type"] == "approval_request"
+    assert msg["text"] == "Approval is needed before publishing."
+
+
+def test_summarize_blocked_without_approval_id_does_not_become_approval_request():
+    """A blocked stage with no approval_id in payload (some other kind of block)
+    must not be misclassified — the override is scoped to the real signal."""
+    msg = summarize_event(
+        {"event_type": "stage.blocked", "outcome": "blocked", "payload": {"reason": "rate_limited"}}
+    )
+    assert msg["message_type"] == "progress"
+
+
 def test_summarize_unknown_event_falls_back_to_progress_with_event_type_text():
     msg = summarize_event({"event_type": "custom_step", "idempotency_key": "k1"})
     assert msg["message_type"] == "progress"
