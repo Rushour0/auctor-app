@@ -281,21 +281,36 @@ class WorkflowStore:
         if not event.run_id or not event.stage_run_id or not event.agent or not event.stage:
             raise ValueError("run_id, stage_run_id, agent, and stage are required")
         started_at = event.started_at or utc_now()
-        observed = event.model_copy(update={
-            "event_type": "stage.started", "outcome": "started", "started_at": started_at,
-        })
+        observed = event.model_copy(
+            update={
+                "event_type": "stage.started",
+                "outcome": "started",
+                "started_at": started_at,
+            }
+        )
         result = self.record_event(observed)
-        return {**result, "run_id": observed.run_id, "stage_run_id": observed.stage_run_id,
-                "started_at": started_at}
+        return {
+            **result,
+            "run_id": observed.run_id,
+            "stage_run_id": observed.stage_run_id,
+            "started_at": started_at,
+        }
 
     def complete_stage(self, event: WorkflowEvent) -> dict[str, Any]:
         """Finish a measured stage and automatically calculate latency from its start event."""
         if not event.run_id or not event.stage_run_id:
             raise ValueError("run_id and stage_run_id are required")
-        starts = list(self.db.fleet_events.find({
-            "workspace_id": event.workspace_id, "run_id": event.run_id,
-            "stage_run_id": event.stage_run_id, "outcome": "started",
-        }, {"_id": 0}))
+        starts = list(
+            self.db.fleet_events.find(
+                {
+                    "workspace_id": event.workspace_id,
+                    "run_id": event.run_id,
+                    "stage_run_id": event.stage_run_id,
+                    "outcome": "started",
+                },
+                {"_id": 0},
+            )
+        )
         if not starts:
             raise ValueError("stage start event not found")
         started_at = starts[0]["started_at"]
@@ -303,30 +318,40 @@ class WorkflowStore:
         duration_ms = event.duration_ms
         if duration_ms is None:
             duration_ms = max(0, round((completed_at - started_at).total_seconds() * 1000))
-        observed = event.model_copy(update={
-            "started_at": started_at, "completed_at": completed_at, "duration_ms": duration_ms,
-        })
+        observed = event.model_copy(
+            update={
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "duration_ms": duration_ms,
+            }
+        )
         result = self.record_event(observed)
-        return {**result, "run_id": observed.run_id, "stage_run_id": observed.stage_run_id,
-                "duration_ms": duration_ms, "cost_usd": observed.cost_usd}
+        return {
+            **result,
+            "run_id": observed.run_id,
+            "stage_run_id": observed.stage_run_id,
+            "duration_ms": duration_ms,
+            "cost_usd": observed.cost_usd,
+        }
 
     def run_observability(self, workspace_id: str, run_id: str) -> dict[str, Any]:
         """Return a reconstructable run timeline with cost, latency, and outcome totals."""
         query = {"workspace_id": workspace_id, "run_id": run_id}
-        events = list(
-            self.db.fleet_events.find(query, {"_id": 0}).sort("recorded_at", ASCENDING)
-        )
+        events = list(self.db.fleet_events.find(query, {"_id": 0}).sort("recorded_at", ASCENDING))
         if not events:
             raise ValueError("workflow run not found")
 
-        durations = [event["duration_ms"] for event in events if event.get("duration_ms") is not None]
+        durations = [
+            event["duration_ms"] for event in events if event.get("duration_ms") is not None
+        ]
         starts = [event["started_at"] for event in events if event.get("started_at") is not None]
         completions = [
             event["completed_at"] for event in events if event.get("completed_at") is not None
         ]
         wall_clock_duration_ms = (
             max(0, round((max(completions) - min(starts)).total_seconds() * 1000))
-            if starts and completions else sum(durations)
+            if starts and completions
+            else sum(durations)
         )
         outcomes: dict[str, int] = {}
         agents: dict[str, dict[str, Any]] = {}
@@ -337,8 +362,14 @@ class WorkflowStore:
             agent = event.get("agent") or "unattributed"
             aggregate = agents.setdefault(
                 agent,
-                {"events": 0, "duration_ms": 0, "input_tokens": 0, "output_tokens": 0,
-                 "cached_tokens": 0, "cost_usd": 0.0},
+                {
+                    "events": 0,
+                    "duration_ms": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cached_tokens": 0,
+                    "cost_usd": 0.0,
+                },
             )
             aggregate["events"] += 1
             aggregate["duration_ms"] += event.get("duration_ms") or 0
@@ -368,9 +399,9 @@ class WorkflowStore:
     def recent_runs(self, workspace_id: str, limit: int = 50) -> dict[str, Any]:
         """Return recent measured runs and judge-facing task metrics for a workspace."""
         events = list(
-            self.db.fleet_events.find(
-                {"workspace_id": workspace_id}, {"_id": 0}
-            ).sort("recorded_at", DESCENDING)
+            self.db.fleet_events.find({"workspace_id": workspace_id}, {"_id": 0}).sort(
+                "recorded_at", DESCENDING
+            )
         )
         run_ids: list[str] = []
         for event in events:
@@ -380,11 +411,15 @@ class WorkflowStore:
             if len(run_ids) >= max(1, min(limit, 200)):
                 break
         runs = [self.run_observability(workspace_id, run_id) for run_id in run_ids]
-        completed = [run for run in runs if any(
-            event.get("event_type") == "run.completed"
-            or (event.get("stage") == "publish" and event.get("outcome") == "succeeded")
-            for event in run["events"]
-        )]
+        completed = [
+            run
+            for run in runs
+            if any(
+                event.get("event_type") == "run.completed"
+                or (event.get("stage") == "publish" and event.get("outcome") == "succeeded")
+                for event in run["events"]
+            )
+        ]
         measured = [run for run in runs if run["summary"]["measured_steps"] > 0]
         return {
             "workspace_id": workspace_id,
@@ -392,13 +427,19 @@ class WorkflowStore:
                 "tasks_attempted": len(runs),
                 "tasks_completed": len(completed),
                 "task_success_rate_percent": round(len(completed) / len(runs) * 100, 1)
-                if runs else None,
+                if runs
+                else None,
                 "average_cost_usd": round(
                     sum(run["summary"]["cost_usd"] for run in completed) / len(completed), 6
-                ) if completed else None,
+                )
+                if completed
+                else None,
                 "average_measured_latency_ms": round(
-                    sum(run["summary"]["wall_clock_duration_ms"] for run in measured) / len(measured)
-                ) if measured else None,
+                    sum(run["summary"]["wall_clock_duration_ms"] for run in measured)
+                    / len(measured)
+                )
+                if measured
+                else None,
             },
             "runs": runs,
         }

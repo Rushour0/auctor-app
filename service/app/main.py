@@ -293,7 +293,10 @@ async def start_content_job(request: ContentJobRequest) -> dict:
     try:
         return await run_in_threadpool(
             ContentAgencyRunner().run_until_approval,
-            request.workspace_id, request.fleet_id, request.client_id, request.topic,
+            request.workspace_id,
+            request.fleet_id,
+            request.client_id,
+            request.topic,
         )
     except (LinkupAPIError, ValueError) as error:
         raise _linkup_http_error(error) from error
