@@ -255,15 +255,61 @@ export default function Conversations() {
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>Conversations</h2>
-          <button type="button" onClick={loadConversations} disabled={listLoading} style={{ fontSize: 12 }}>
-            Refresh
+          <button
+            type="button"
+            onClick={loadConversations}
+            disabled={listLoading}
+            title="Refresh conversations"
+            style={{
+              padding: "5px 8px",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              background: "#fff",
+              color: "#374151",
+              fontSize: 12,
+              cursor: listLoading ? "default" : "pointer",
+              opacity: listLoading ? 0.6 : 1,
+            }}
+          >
+            ⟳ Refresh
           </button>
         </div>
+
+        <a
+          href="/onboarding"
+          style={{
+            display: "block",
+            textAlign: "center",
+            padding: "9px 12px",
+            marginBottom: 14,
+            borderRadius: 8,
+            border: "1px solid #2563eb",
+            background: "#2563eb",
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+            textDecoration: "none",
+          }}
+        >
+          + New conversation
+        </a>
+
         {listLoading && <p style={{ color: "#6b7280", fontSize: 13 }}>Loading…</p>}
         {listError && <p style={{ color: "#991b1b", fontSize: 13 }}>{listError}</p>}
         {!listLoading && !listError && conversations.length === 0 && (
-          <p style={{ color: "#6b7280", fontSize: 13 }}>
-            No conversations yet — <a href="/onboarding">onboard a client</a> to start one.
+          <p
+            style={{
+              color: "#6b7280",
+              fontSize: 13,
+              background: "#f9fafb",
+              border: "1px solid #e5e7eb",
+              borderRadius: 8,
+              padding: "10px 12px",
+            }}
+          >
+            No conversations yet. A conversation starts once a client is onboarded — use{" "}
+            <span style={{ fontWeight: 600, color: "#2563eb" }}>+ New conversation</span> above to
+            begin one.
           </p>
         )}
         {conversations.map((c) => (
