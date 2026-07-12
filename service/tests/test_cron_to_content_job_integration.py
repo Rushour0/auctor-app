@@ -1,6 +1,6 @@
 """Integration coverage for "can a cron actually produce a post for a client".
 
-Two things are exercised together against the same real WorkflowStore + fake-Mongo
+Three things are exercised together against the same real WorkflowStore + fake-Mongo
 double (service/tests/_fake_mongo.py — the sync-pymongo substrate CI's headless run
 uses in place of a real mongod, see that module's docstring):
 
@@ -11,12 +11,12 @@ uses in place of a real mongod, see that module's docstring):
    drafts, gates on sourcing, records a pending approval, and — once approved —
    publishes a real content_posts-adjacent record (public_deliveries) and a
    PublishRecord.
-
-The test that matters most is the last one: it proves the two halves above are
-NOT currently wired together. run_once() enqueues a trigger; nothing consumes
-that trigger into a ContentAgencyRunner call. A client with an active,
-past-due content-loop pipeline gets a workflow_triggers row, not a post — the
-gap is asserted explicitly here rather than left to be discovered in production.
+3. The consumer that connects them: scheduler._consume/ContentAgencyRunner.consume_trigger
+   picks up a pending trigger, derives a real topic from the client's own onboarding
+   data (never a hardcoded topic), and resolves the trigger to completed/failed —
+   never leaves it pending. This used to be the gap (see git history for the
+   assertion this replaced) — now it's asserted as working, not just documented as
+   missing.
 """
 
 from __future__ import annotations
@@ -44,9 +44,19 @@ def _store(database: Database) -> WorkflowStore:
     return WorkflowStore(settings=settings, database=database)
 
 
-def _seed_active_content_loop_pipeline(store: WorkflowStore, *, due_at: datetime) -> None:
+def _seed_active_content_loop_pipeline(
+    store: WorkflowStore, *, due_at: datetime, content_topics: list[str] | None = None
+) -> None:
     """A client whose site_build already shipped and whose content_loop is active and
-    past-due on BOTH platforms — the exact state run_once() is meant to act on."""
+    past-due on BOTH platforms — the exact state run_once() is meant to act on.
+    ``content_topics`` mirrors what a real onboarding submission stores under
+    intake.self_reported_context.positioning.content_topics — derive_topic reads
+    this, never a manually-passed topic, once the consumer picks the trigger up."""
+    self_reported_context = (
+        {"positioning": {"content_topics": content_topics, "known_for": ""}}
+        if content_topics is not None
+        else {}
+    )
     store.start_fleet(
         FleetIntake(
             workspace_id=WORKSPACE,
@@ -57,6 +67,7 @@ def _seed_active_content_loop_pipeline(store: WorkflowStore, *, due_at: datetime
                     name="Kriti Agarwal",
                     linkedin_url="https://linkedin.com/in/kriti",
                     audience=["investors"],
+                    self_reported_context=self_reported_context,
                 )
             ],
         )
@@ -217,34 +228,111 @@ def test_content_job_runner_publishes_only_after_approval():
         agency.approve_and_publish_web(WORKSPACE, run["approval_id"])
 
 
-# --------------------------------------------------------------------------- the actual gap
+# --------------------------------------------------------------------------- topic derivation
 
 
-def test_a_scheduler_enqueued_trigger_is_not_automatically_turned_into_a_post():
-    """The honest current-state check this test module exists for.
+def test_derive_topic_prefers_content_topics_over_known_for():
+    pipeline = {
+        "intake": {
+            "self_reported_context": {
+                "positioning": {"content_topics": ["shipping cadence", "other"], "known_for": "x"}
+            }
+        }
+    }
+    assert runner_module.derive_topic(pipeline) == "shipping cadence"
 
-    A client with an active, past-due content-loop pipeline gets a
-    workflow_triggers row from run_once()-equivalent enqueueing — but nothing in
-    this codebase consumes that row into a ContentAgencyRunner.run_until_approval
-    call. No topic is derived from real signal (GitHub/trend research per
-    PRODUCT-SLICES.md Slice 3), and nothing marks the trigger non-pending. This
-    assertion should start FAILING the day someone wires that consumer — flip it
-    to the positive assertion at that point, don't just delete this test.
-    """
+
+def test_derive_topic_falls_back_to_known_for():
+    pipeline = {
+        "intake": {
+            "self_reported_context": {
+                "positioning": {"content_topics": [], "known_for": "building in public"}
+            }
+        }
+    }
+    assert runner_module.derive_topic(pipeline) == "building in public"
+
+
+def test_derive_topic_returns_none_when_nothing_usable():
+    assert runner_module.derive_topic({"intake": {}}) is None
+    assert runner_module.derive_topic({}) is None
+
+
+# --------------------------------------------------------------------------- the consumer (was the gap)
+
+
+def test_consume_trigger_derives_topic_and_completes_the_trigger():
+    """The fix: a scheduler-enqueued trigger IS now automatically turned into a real
+    awaiting-approval run, with the topic derived from the client's own onboarding
+    data rather than a hardcoded string."""
     database = Database()
     store = _store(database)
     due_at = datetime.now(timezone.utc) - timedelta(hours=1)
-    _seed_active_content_loop_pipeline(store, due_at=due_at)
-
+    _seed_active_content_loop_pipeline(store, due_at=due_at, content_topics=["shipping cadence"])
     triggers = store.enqueue_due_content_loops(platform="x", interval_hours=6)
     assert len(triggers) == 1
 
-    # Nothing else runs here — this is the whole point. If a background consumer
-    # existed, it would have picked up the pending trigger by now.
+    agency = runner_module.ContentAgencyRunner(store=store)
+    with _patch_linkup(database, _sample_trend()):
+        result = agency.consume_trigger(triggers[0])
 
-    still_pending = store.db.workflow_triggers.find_one({"trigger_id": triggers[0]["trigger_id"]})
-    assert still_pending["status"] == "pending"
+    assert result["status"] == "completed"
+    assert result["draft"]
 
-    assert store.db.workflow_artifacts.count_documents({"workspace_id": WORKSPACE}) == 0
-    assert store.db.approval_requests.count_documents({"workspace_id": WORKSPACE}) == 0
-    assert store.db.public_deliveries.count_documents({}) == 0
+    trigger = store.db.workflow_triggers.find_one({"trigger_id": triggers[0]["trigger_id"]})
+    assert trigger["status"] == "completed"
+
+    approval = store.db.approval_requests.find_one({"workspace_id": WORKSPACE})
+    assert approval is not None and approval["status"] == "pending"
+
+
+def test_consume_trigger_fails_clean_with_no_topic_available():
+    """A client onboarded with no content_topics/known_for must not silently get a
+    fabricated topic — the trigger resolves to failed, never left pending forever."""
+    database = Database()
+    store = _store(database)
+    due_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    _seed_active_content_loop_pipeline(store, due_at=due_at)  # no content_topics
+    triggers = store.enqueue_due_content_loops(platform="x", interval_hours=6)
+
+    agency = runner_module.ContentAgencyRunner(store=store)
+    result = agency.consume_trigger(triggers[0])
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "no_topic_available"
+    trigger = store.db.workflow_triggers.find_one({"trigger_id": triggers[0]["trigger_id"]})
+    assert trigger["status"] == "failed"
+
+
+def test_consume_trigger_fails_clean_when_research_finds_nothing():
+    database = Database()
+    store = _store(database)
+    due_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    _seed_active_content_loop_pipeline(store, due_at=due_at, content_topics=["a quiet week"])
+    triggers = store.enqueue_due_content_loops(platform="x", interval_hours=6)
+
+    agency = runner_module.ContentAgencyRunner(store=store)
+    with _patch_linkup(database, trend_doc=None):
+        result = agency.consume_trigger(triggers[0])
+
+    assert result["status"] == "failed"
+    trigger = store.db.workflow_triggers.find_one({"trigger_id": triggers[0]["trigger_id"]})
+    assert trigger["status"] == "failed"
+
+
+def test_scheduler_consume_resolves_every_trigger_independently():
+    """scheduler._consume must not let one client's failure stop another's attempt —
+    fleet isolation applied to the consumer batch, same as the rest of the domain."""
+    from service.auctor import scheduler as scheduler_module
+
+    database = Database()
+    store = _store(database)
+    due_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    _seed_active_content_loop_pipeline(store, due_at=due_at, content_topics=["shipping cadence"])
+    triggers = store.enqueue_due_content_loops(platform="x", interval_hours=6)
+
+    with _patch_linkup(database, _sample_trend()):
+        results = scheduler_module._consume(store, triggers)
+
+    assert len(results) == 1
+    assert results[0]["status"] == "completed"

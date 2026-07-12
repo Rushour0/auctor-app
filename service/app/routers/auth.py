@@ -13,10 +13,47 @@ from ..config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+# Every collection that's scoped by workspace_id — kept in one place so a backfill
+# (or any future per-workspace operation) can't silently miss a collection.
+_WORKSPACE_SCOPED_COLLECTIONS = (
+    "fleet_runs",
+    "client_pipelines",
+    "fleet_events",
+    "workflow_artifacts",
+    "approval_requests",
+    "content_posts",
+    "workflow_triggers",
+    "public_deliveries",
+    "onboarding_submissions",
+    "onboarding_drafts",
+)
+
 
 class CredentialLogin(BaseModel):
     username: str = Field(min_length=1)
     password: str = Field(min_length=1)
+
+
+async def _backfill_personal_workspace(db, target_workspace_id: str) -> None:
+    """One-time, idempotent migration: the app used to default everything to a
+    hardcoded workspace_id "personal" before workspace_id was derived per-operator
+    at login. On an operator's first login under the new scheme, move any
+    "personal"-workspace data into their real workspace_id — but only if their
+    workspace doesn't already have data (never overwrite real per-operator state)."""
+    if target_workspace_id == "personal":
+        return
+    already_has_data = await db.client_pipelines.count_documents(
+        {"workspace_id": target_workspace_id}
+    )
+    if already_has_data:
+        return
+    has_legacy_data = await db.client_pipelines.count_documents({"workspace_id": "personal"})
+    if not has_legacy_data:
+        return
+    for name in _WORKSPACE_SCOPED_COLLECTIONS:
+        await db[name].update_many(
+            {"workspace_id": "personal"}, {"$set": {"workspace_id": target_workspace_id}}
+        )
 
 
 async def require_operator(request: Request) -> dict:
@@ -71,7 +108,9 @@ async def authorize() -> RedirectResponse:
 
 
 @router.get("/github/callback")
-async def callback(state: str = Query(...), code: str = Query(...)) -> RedirectResponse:
+async def callback(
+    request: Request, state: str = Query(...), code: str = Query(...)
+) -> RedirectResponse:
     """Handle GitHub's redirect: verify state, exchange the code, set the session cookie."""
     _require_session_secret()
     try:
@@ -102,6 +141,9 @@ async def callback(state: str = Query(...), code: str = Query(...)) -> RedirectR
         )
         user = user_resp.json()
 
+    workspace_id = session.workspace_id_for_login(user["login"])
+    await _backfill_personal_workspace(request.app.state.db, workspace_id)
+
     token = session.issue_session(github_login=user["login"], github_id=int(user["id"]))
     resp = RedirectResponse("/", status_code=302)
     _set_session_cookie(resp, token)
@@ -121,7 +163,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 
 @router.post("/login")
-async def login(credentials: CredentialLogin) -> JSONResponse:
+async def login(request: Request, credentials: CredentialLogin) -> JSONResponse:
     """Username/password fallback login — an alternative to GitHub OAuth, same
     session-cookie mechanism either way. Fails loud (503) if the operator hasn't
     configured OPERATOR_LOGIN_USERNAME/PASSWORD; 401 on any mismatch, checked with
@@ -137,10 +179,13 @@ async def login(credentials: CredentialLogin) -> JSONResponse:
     if not (username_ok and password_ok):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
+    workspace_id = session.workspace_id_for_login(credentials.username)
+    await _backfill_personal_workspace(request.app.state.db, workspace_id)
+
     # gh_id has no meaning for a credential login; 0 is a stable sentinel the
     # frontend's Operator type (gh_id: number) already accepts without a schema change.
     token = session.issue_session(github_login=credentials.username, github_id=0)
-    resp = JSONResponse({"login": credentials.username, "gh_id": 0})
+    resp = JSONResponse({"login": credentials.username, "gh_id": 0, "workspace_id": workspace_id})
     _set_session_cookie(resp, token)
     return resp
 
@@ -148,7 +193,12 @@ async def login(credentials: CredentialLogin) -> JSONResponse:
 @router.get("/me")
 async def me(operator: dict = Depends(require_operator)) -> dict:
     """Return the currently authenticated operator's identity."""
-    return {"login": operator["login"], "gh_id": operator["gh_id"]}
+    return {
+        "login": operator["login"],
+        "gh_id": operator["gh_id"],
+        "workspace_id": operator.get("workspace_id")
+        or session.workspace_id_for_login(operator["login"]),
+    }
 
 
 @router.post("/logout")

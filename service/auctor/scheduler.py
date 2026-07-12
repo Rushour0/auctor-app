@@ -1,12 +1,16 @@
 """Six-hour cadence scheduler.
 
-This process only enqueues due content-loop triggers through WorkflowStore. Hermes consumes the
-pending triggers and runs the normal QA/approval-gated pipeline; cron never publishes directly.
+This process enqueues due content-loop triggers through WorkflowStore, then immediately consumes
+each one via ContentAgencyRunner.consume_trigger — real research + drafting up to the approval
+gate, topic derived from the client's own onboarding data. Cron never publishes directly: the
+consumer stops at awaiting_approval, identically to the manual POST /api/content-jobs path. A
+per-trigger consume failure never blocks the rest of the batch or the other platform (fleet
+isolation) — each trigger is resolved to completed/failed independently.
 
 Cadences are split per platform: ``x`` and ``linkedin`` advance independently through their own
 ``platform_next_check.<platform>`` windows so a stall on one channel never blocks the other. After
-enqueuing, the scheduler makes a best-effort outbound metrics push so downstream dashboards see COGS
-without a second poller.
+enqueuing and consuming, the scheduler makes a best-effort outbound metrics push so downstream
+dashboards see COGS without a second poller.
 """
 
 import json
@@ -15,7 +19,23 @@ import httpx
 
 from .config import Settings
 from .config import get_settings
+from .runner import ContentAgencyRunner
 from .workflow import WorkflowStore
+
+
+def _consume(store: WorkflowStore, triggers: list[dict]) -> list[dict]:
+    """Consume each enqueued trigger independently — one client's research/drafting
+    failure must never stop another client's trigger from being attempted."""
+    runner = ContentAgencyRunner(store=store)
+    results = []
+    for trigger in triggers:
+        try:
+            results.append(runner.consume_trigger(trigger))
+        except Exception as error:  # noqa: BLE001 - never let one bad trigger kill the batch
+            results.append(
+                {"trigger_id": trigger["trigger_id"], "status": "failed", "reason": str(error)}
+            )
+    return results
 
 
 def _push_metrics(store: WorkflowStore, settings: Settings) -> bool:
@@ -59,8 +79,10 @@ def run_once() -> dict:
         batch_size=settings.scheduler_batch_size,
     )
     triggers = x_triggers + linkedin_triggers
+    consumed = _consume(store, triggers)
     return {
         "enqueued": len(triggers),
+        "consumed": consumed,
         "by_platform": {"x": len(x_triggers), "linkedin": len(linkedin_triggers)},
         "triggers": triggers,
         "pushed": _push_metrics(store, settings),

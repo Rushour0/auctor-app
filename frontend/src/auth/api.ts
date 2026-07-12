@@ -5,11 +5,27 @@
 // session cookie is httponly + same-origin, so `credentials: 'include'` is all
 // that's needed to carry it. No external deps.
 
-/** The logged-in GitHub operator, as returned by GET /api/auth/me. */
+/** The logged-in operator, as returned by GET /api/auth/me. workspace_id is
+ * derived deterministically from login (server-side, session.workspace_id_for_login)
+ * — same operator always gets the same workspace across logins. */
 export type Operator = {
   login: string;
   gh_id: number;
+  workspace_id: string;
 };
+
+/**
+ * Module-level cache of the current operator's workspace_id, set whenever
+ * fetchMe()/loginWithCredentials() resolve with a real operator. RequireAuth
+ * resolves this before rendering any gated page, so by the time api/client.ts
+ * calls read it, it's always the real value — 'personal' is only a pre-login
+ * placeholder, never sent with an authenticated request.
+ */
+let currentWorkspaceId = 'personal';
+
+export function getWorkspaceId(): string {
+  return currentWorkspaceId;
+}
 
 /**
  * Fetch the current operator from the session cookie.
@@ -17,8 +33,10 @@ export type Operator = {
  */
 export async function fetchMe(): Promise<Operator | null> {
   const r = await fetch('/api/auth/me', { credentials: 'include' });
-  if (r.status === 200) return r.json();
-  return null;
+  if (r.status !== 200) return null;
+  const operator = (await r.json()) as Operator;
+  currentWorkspaceId = operator.workspace_id;
+  return operator;
 }
 
 /** Kick off the GitHub OAuth authorize redirect. */
@@ -48,7 +66,9 @@ export async function loginWithCredentials(username: string, password: string): 
     }
     throw new Error(message);
   }
-  return r.json();
+  const operator = (await r.json()) as Operator;
+  currentWorkspaceId = operator.workspace_id;
+  return operator;
 }
 
 /** Clear the server session and return to the login screen. */

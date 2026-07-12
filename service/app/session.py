@@ -14,11 +14,20 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import time
 
 SESSION_COOKIE = "auctor_operator"
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
 STATE_TTL_SECONDS = 600
+
+
+def workspace_id_for_login(login: str) -> str:
+    """Derive a stable workspace_id from an operator's login (GitHub username or
+    credential username) — same operator always gets the same workspace_id across
+    logins, no separate workspace-creation step or storage needed."""
+    slug = re.sub(r"[^a-z0-9]+", "-", login.strip().lower()).strip("-")
+    return f"ws-{slug}" if slug else "ws-operator"
 
 
 class SessionError(RuntimeError):
@@ -48,6 +57,7 @@ def issue_session(*, github_login: str, github_id: int) -> str:
             {
                 "login": github_login,
                 "gh_id": github_id,
+                "workspace_id": workspace_id_for_login(github_login),
                 "exp": int(time.time()) + SESSION_TTL_SECONDS,
             },
             separators=(",", ":"),

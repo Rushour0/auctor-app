@@ -140,10 +140,17 @@ async def submit_onboarding(submission: OnboardingSubmission) -> dict:
     """Validate onboarding, persist the source brief, and initialize both client pipelines."""
     client_id, fleet_id = submission.identifiers()
     intake = submission.to_fleet_intake(client_id, fleet_id)
+    store = _workflow_store()
     try:
-        result = await run_in_threadpool(_workflow_store().start_fleet, intake)
+        result = await run_in_threadpool(store.start_fleet, intake)
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+    # start_fleet leaves content_loop at status "not_started" — the scheduler only
+    # picks up "active" pipelines, so without this an onboarded client's cron never
+    # fires. Activate it immediately (due now) so the next scheduler tick drafts a
+    # real first post from what they just told us, not a manually-typed topic.
+    await run_in_threadpool(store.schedule_content_loop, submission.workspace_id, client_id)
 
     now = datetime.now(timezone.utc)
     await app.state.db.onboarding_submissions.update_one(

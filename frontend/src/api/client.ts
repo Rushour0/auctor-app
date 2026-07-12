@@ -4,7 +4,6 @@
 // service through the typed `api` object below. The Vite dev proxy forwards
 // /api to the service on :8000, and the session cookie is httponly +
 // same-origin, so `credentials: 'include'` is all that's needed to carry it.
-// No external deps.
 //
 // ---------------------------------------------------------------------------
 // Endpoint contract (with units B-E). If a backend path differs, ONLY this
@@ -12,12 +11,14 @@
 //
 //   GET  /api/auth/me                -> Me
 //   POST /api/auth/logout            -> (session cleared)
-//   GET  /api/workflows/events       -> EventItem[]      ?limit
-//   GET  /api/workflows/triggers     -> TriggerItem[]    ?limit
+//   GET  /api/workflows/events       -> EventItem[]      ?limit&workspace_id
+//   GET  /api/workflows/triggers     -> TriggerItem[]    ?limit&workspace_id
 //   POST /api/workflows/triggers/ack -> ack a trigger     {workspace_id,trigger_id,status}
-//   GET  /api/workflows/posts        -> PostItem[]       ?limit
-//   GET  /api/metrics                -> Metrics          ?platform
+//   GET  /api/workflows/posts        -> PostItem[]       ?limit&workspace_id
+//   GET  /api/metrics                -> Metrics          ?workspace_id&platform
 // ---------------------------------------------------------------------------
+
+import { getWorkspaceId } from '../auth/api';
 
 /** Thrown by the fetch helpers when the backend answers 401 (unauthenticated). */
 export class AuthError extends Error {
@@ -227,12 +228,13 @@ export const api = {
   me: () => jget<Me>('/api/auth/me'),
   /** Clear the server session. */
   logout: () => jpost('/api/auth/logout'),
-  /** Conversations feed — recent fleet_events, newest first. */
+  /** Conversations feed — recent fleet_events, newest first, scoped to the
+   * operator's own workspace (see auth/api.ts's getWorkspaceId). */
   events: (limit = 100) =>
-    jget<EventItem[]>('/api/workflows/events', { limit }),
-  /** Crons page — scheduled content-loop triggers. */
+    jget<EventItem[]>('/api/workflows/events', { limit, workspace_id: getWorkspaceId() }),
+  /** Crons page — scheduled content-loop triggers, scoped to the operator's workspace. */
   triggers: (limit = 100) =>
-    jget<TriggerItem[]>('/api/workflows/triggers', { limit }),
+    jget<TriggerItem[]>('/api/workflows/triggers', { limit, workspace_id: getWorkspaceId() }),
   /** Ack a trigger, moving it to running/completed/failed. */
   ackTrigger: (
     workspace_id: string,
@@ -240,9 +242,13 @@ export const api = {
     status: 'running' | 'completed' | 'failed',
   ) =>
     jpost('/api/workflows/triggers/ack', { workspace_id, trigger_id, status }),
-  /** Posts page — published/attempted content posts. */
-  posts: (limit = 100) => jget<PostItem[]>('/api/workflows/posts', { limit }),
-  /** Metrics page — aggregated counts + COGS, optionally scoped to a platform. */
+  /** Posts page — published/attempted content posts, scoped to the operator's workspace. */
+  posts: (limit = 100) =>
+    jget<PostItem[]>('/api/workflows/posts', { limit, workspace_id: getWorkspaceId() }),
+  /** Metrics page — aggregated counts + COGS, required workspace scope + optional platform. */
   metrics: (platform?: 'x' | 'linkedin') =>
-    jget<Metrics>('/api/metrics', platform ? { platform } : undefined),
+    jget<Metrics>(
+      '/api/metrics',
+      platform ? { workspace_id: getWorkspaceId(), platform } : { workspace_id: getWorkspaceId() },
+    ),
 };

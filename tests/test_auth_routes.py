@@ -79,7 +79,7 @@ async def test_me_returns_operator_for_valid_session(monkeypatch):
         async with app.router.lifespan_context(app):
             resp = await client.get("/api/auth/me")
     assert resp.status_code == 200
-    assert resp.json() == {"login": "octocat", "gh_id": 583231}
+    assert resp.json() == {"login": "octocat", "gh_id": 583231, "workspace_id": "ws-octocat"}
 
 
 @pytest.mark.asyncio
@@ -133,6 +133,7 @@ async def test_github_callback_happy_path_sets_operator_cookie(monkeypatch):
     with patch("service.app.routers.auth.httpx.AsyncClient", _FakeGithubClient):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             async with app.router.lifespan_context(app):
+                app.state.db = _FakeDB()
                 resp = await client.get(
                     "/api/auth/github/callback",
                     params={"state": state, "code": "auth-code"},
@@ -144,6 +145,7 @@ async def test_github_callback_happy_path_sets_operator_cookie(monkeypatch):
     claims = session.verify_session(resp.cookies[session.SESSION_COOKIE])
     assert claims["login"] == "octocat"
     assert claims["gh_id"] == 42
+    assert claims["workspace_id"] == "ws-octocat"
 
 
 @pytest.mark.asyncio
@@ -193,12 +195,29 @@ class _FakeCollection:
     def find(self, *_args, **_kwargs) -> _FakeCursor:
         return _FakeCursor(self._docs)
 
+    async def count_documents(self, *_args, **_kwargs) -> int:
+        return len(self._docs)
+
+    async def update_many(self, *_args, **_kwargs) -> None:
+        return None
+
 
 class _FakeDB:
-    """Minimal async Mongo stand-in exposing only fleet_runs.find().to_list()."""
+    """Minimal async Mongo stand-in. fleet_runs is explicit/inspectable; every other
+    collection (as touched by auth.py's _backfill_personal_workspace, which iterates
+    _WORKSPACE_SCOPED_COLLECTIONS on every login) lazily resolves to an empty fake
+    collection, so the backfill's count_documents({"workspace_id": "personal"}) is 0
+    and it safely no-ops in tests that aren't specifically exercising it."""
 
-    def __init__(self, fleet_docs: list[dict]):
-        self.fleet_runs = _FakeCollection(fleet_docs)
+    def __init__(self, fleet_docs: list[dict] | None = None):
+        self.fleet_runs = _FakeCollection(fleet_docs or [])
+        self._other: dict[str, _FakeCollection] = {}
+
+    def __getattr__(self, name: str) -> _FakeCollection:
+        return self._other.setdefault(name, _FakeCollection([]))
+
+    def __getitem__(self, name: str) -> _FakeCollection:
+        return getattr(self, name)
 
 
 @pytest.mark.asyncio
@@ -297,14 +316,15 @@ async def test_credential_login_sets_operator_cookie_on_success(monkeypatch):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         async with app.router.lifespan_context(app):
+            app.state.db = _FakeDB()
             resp = await client.post(
                 "/api/auth/login", json={"username": "ops", "password": "correct-horse"}
             )
     assert resp.status_code == 200
-    assert resp.json() == {"login": "ops", "gh_id": 0}
+    assert resp.json() == {"login": "ops", "gh_id": 0, "workspace_id": "ws-ops"}
     assert session.SESSION_COOKIE in resp.cookies
     claims = session.verify_session(resp.cookies[session.SESSION_COOKIE])
-    assert claims == {"login": "ops", "gh_id": 0, "exp": claims["exp"]}
+    assert claims == {"login": "ops", "gh_id": 0, "workspace_id": "ws-ops", "exp": claims["exp"]}
 
 
 @pytest.mark.asyncio
@@ -318,6 +338,7 @@ async def test_credential_login_session_passes_require_operator_gate(monkeypatch
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         async with app.router.lifespan_context(app):
+            app.state.db = _FakeDB()
             login_resp = await client.post(
                 "/api/auth/login", json={"username": "ops", "password": "correct-horse"}
             )
@@ -329,7 +350,7 @@ async def test_credential_login_session_passes_require_operator_gate(monkeypatch
         async with app.router.lifespan_context(app):
             me_resp = await client.get("/api/auth/me")
     assert me_resp.status_code == 200
-    assert me_resp.json() == {"login": "ops", "gh_id": 0}
+    assert me_resp.json() == {"login": "ops", "gh_id": 0, "workspace_id": "ws-ops"}
 
 
 @pytest.mark.asyncio
@@ -341,3 +362,99 @@ async def test_logout_clears_cookie():
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
     assert "auctor_operator=" in resp.headers["set-cookie"]
+
+
+# --------------------------------------------------------------------------- backfill
+
+
+class _QueryAwareCollection:
+    """Tracks update_many calls and answers count_documents against a real query
+    filter (workspace_id equality only — all _backfill_personal_workspace needs)."""
+
+    def __init__(self, docs: list[dict]):
+        self.docs = docs
+        self.update_many_calls: list[tuple[dict, dict]] = []
+
+    async def count_documents(self, query: dict) -> int:
+        ws = query.get("workspace_id")
+        return sum(1 for d in self.docs if d.get("workspace_id") == ws)
+
+    async def update_many(self, query: dict, update: dict) -> None:
+        self.update_many_calls.append((query, update))
+        ws = query.get("workspace_id")
+        new_ws = update.get("$set", {}).get("workspace_id")
+        for d in self.docs:
+            if d.get("workspace_id") == ws:
+                d["workspace_id"] = new_ws
+
+
+class _QueryAwareDB:
+    def __init__(self):
+        self._collections: dict[str, _QueryAwareCollection] = {}
+
+    def seed(self, name: str, docs: list[dict]) -> None:
+        self._collections[name] = _QueryAwareCollection(docs)
+
+    def __getattr__(self, name: str) -> _QueryAwareCollection:
+        return self._collections.setdefault(name, _QueryAwareCollection([]))
+
+    def __getitem__(self, name: str) -> _QueryAwareCollection:
+        return getattr(self, name)
+
+
+@pytest.mark.asyncio
+async def test_backfill_migrates_legacy_personal_data_to_the_real_workspace():
+    from service.app.routers.auth import _backfill_personal_workspace
+
+    db = _QueryAwareDB()
+    db.seed("client_pipelines", [{"client_id": "c1", "workspace_id": "personal"}])
+    db.seed("content_posts", [{"post_id": "p1", "workspace_id": "personal"}])
+
+    await _backfill_personal_workspace(db, "ws-ops")
+
+    assert db.client_pipelines.docs[0]["workspace_id"] == "ws-ops"
+    assert db.content_posts.docs[0]["workspace_id"] == "ws-ops"
+
+
+@pytest.mark.asyncio
+async def test_backfill_is_a_noop_when_target_workspace_already_has_data():
+    from service.app.routers.auth import _backfill_personal_workspace
+
+    db = _QueryAwareDB()
+    db.seed(
+        "client_pipelines",
+        [
+            {"client_id": "c1", "workspace_id": "personal"},
+            {"client_id": "c2", "workspace_id": "ws-ops"},
+        ],
+    )
+
+    await _backfill_personal_workspace(db, "ws-ops")
+
+    # c1 must NOT have been swept into ws-ops — that workspace already had real data.
+    assert db.client_pipelines.docs[0]["workspace_id"] == "personal"
+    assert not db.client_pipelines.update_many_calls
+
+
+@pytest.mark.asyncio
+async def test_backfill_is_a_noop_when_no_legacy_data_exists():
+    from service.app.routers.auth import _backfill_personal_workspace
+
+    db = _QueryAwareDB()
+    db.seed("client_pipelines", [])
+
+    await _backfill_personal_workspace(db, "ws-ops")
+
+    assert not db.client_pipelines.update_many_calls
+
+
+@pytest.mark.asyncio
+async def test_backfill_is_a_noop_for_the_personal_workspace_itself():
+    from service.app.routers.auth import _backfill_personal_workspace
+
+    db = _QueryAwareDB()
+    db.seed("client_pipelines", [{"client_id": "c1", "workspace_id": "personal"}])
+
+    await _backfill_personal_workspace(db, "personal")
+
+    assert not db.client_pipelines.update_many_calls

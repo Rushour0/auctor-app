@@ -1,5 +1,6 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import "../styles.css";
+import { fetchMe, getWorkspaceId } from "../auth/api";
 
 const csv = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
 const lines = (value: string) => value.split("\n").map((item) => item.trim()).filter(Boolean);
@@ -15,9 +16,13 @@ export default function Onboarding() {
     platforms: ["x"], cadence: 3, approval: "whatsapp", phone: "", offLimits: "",
     research: false, profile: false, publishApproval: true,
   });
+  // This page is public (unauthenticated), but an operator navigating here is
+  // usually already logged in — populate the workspace_id cache so submissions
+  // land in their real workspace, not the pre-login "personal" placeholder.
+  useEffect(() => { void fetchMe(); }, []);
   const set = (key: string, value: unknown) => setForm((current) => ({...current, [key]: value}));
   const payload = {
-    workspace_id: "personal",
+    workspace_id: getWorkspaceId(),
     identity: {full_name: form.fullName, email: form.email, job_title: form.role,
       company: form.company, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone},
     sources: {linkedin_url: form.linkedin, website_url: form.website, github_url: form.github},

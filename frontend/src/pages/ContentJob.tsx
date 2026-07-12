@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { getWorkspaceId } from "../auth/api";
 
 export default function ContentJob() {
-  const [workspaceId, setWorkspaceId] = useState(localStorage.getItem("auctor-workspace") || "workspace-1");
+  const [workspaceId, setWorkspaceId] = useState(
+    localStorage.getItem("auctor-workspace") || getWorkspaceId(),
+  );
   const [fleetId, setFleetId] = useState("");
   const [clientId, setClientId] = useState("");
   const [topic, setTopic] = useState("AI agents and founder-led growth");

@@ -17,7 +17,23 @@ def test_session_round_trip(secret) -> None:
     data = session.verify_session(token)
     assert data["login"] == "octocat"
     assert data["gh_id"] == 583231
+    assert data["workspace_id"] == "ws-octocat"
     assert data["exp"] > int(time.time())
+
+
+def test_workspace_id_for_login_is_stable_and_slugified() -> None:
+    assert session.workspace_id_for_login("octocat") == "ws-octocat"
+    assert session.workspace_id_for_login("Octocat") == "ws-octocat"  # case-insensitive
+    assert session.workspace_id_for_login("octocat") == session.workspace_id_for_login("octocat")
+
+
+def test_workspace_id_for_login_slugifies_special_characters() -> None:
+    assert session.workspace_id_for_login("Rushikesh Patade") == "ws-rushikesh-patade"
+    assert session.workspace_id_for_login("user+tag@x") == "ws-user-tag-x"
+
+
+def test_workspace_id_for_login_falls_back_when_nothing_slugifiable() -> None:
+    assert session.workspace_id_for_login("!!!") == "ws-operator"
 
 
 def test_session_rejects_tampering(secret) -> None:
