@@ -22,13 +22,13 @@ jobs:
       - name: python 3.12
         run: uv python install 3.12
       - name: install deps
-        run: uv pip install --system -e ".[dev]"
+        run: uv sync --extra dev
       - name: ruff (lint)
-        run: ruff check service
+        run: uv run ruff check service
       - name: ruff (format check)
-        run: ruff format --check service
+        run: uv run ruff format --check service
       - name: pytest
-        run: pytest -q
+        run: uv run pytest -q
 
   frontend:
     name: frontend (typecheck + build)
