@@ -166,6 +166,37 @@ class FleetRun(BaseModel):
     updated_at: datetime = Field(default_factory=now)
 
 
+class XOAuthState(BaseModel):
+    """Short-lived PKCE handshake state for one client's X authorize-redirect round trip.
+
+    Stored in the ``x_oauth_states`` collection, keyed by ``state`` (the CSRF/state token echoed
+    back on the callback), and deleted once the callback consumes it.
+    """
+
+    state: str = Field(default_factory=lambda: uuid4().hex)
+    client_id: str
+    code_verifier: str
+    created_at: datetime = Field(default_factory=now)
+
+
+class XOAuthCredential(BaseModel):
+    """Per-client X (Twitter) OAuth 2.0 user-context token set.
+
+    Stored in the ``x_oauth_credentials`` collection, one document per ``client_id`` — never
+    shared across clients (fleet isolation). ``access_token`` is short-lived (~2h);
+    ``refresh_token`` rotates on every use per X's refresh-token-rotation behavior.
+    """
+
+    client_id: str
+    x_user_id: str | None = None
+    access_token: str
+    refresh_token: str
+    expires_at: datetime
+    scope: str = "tweet.read tweet.write users.read offline.access"
+    created_at: datetime = Field(default_factory=now)
+    updated_at: datetime = Field(default_factory=now)
+
+
 class ApprovalRequest(BaseModel):
     id: str = Field(default_factory=lambda: f"approval_{uuid4().hex[:12]}")
     client_id: str

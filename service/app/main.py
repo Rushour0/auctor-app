@@ -20,6 +20,7 @@ from service.auctor.workflow import (
 )
 
 from .config import settings
+from .routers.x_oauth import router as x_oauth_router
 
 VERSION = "0.0.1"
 
@@ -41,6 +42,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(x_oauth_router)
 
 
 class LinkupSyncRequest(BaseModel):
