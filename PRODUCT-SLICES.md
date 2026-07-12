@@ -16,8 +16,53 @@ engineering; open questions below are already decided with the founder.
   (per research: one off-voice post triggers immediate abandonment; the tool is only as valuable
   as the founder can trust it unattended).
 - **Non-goals (v1):** not a general content calendar tool; not trying to support every social
-  platform (LinkedIn + X only); not offering full silent autonomy (approval-frequency reduction,
+  platform (X primary, LinkedIn secondary per the pivot below — not every social platform); not
+  offering full silent autonomy (approval-frequency reduction,
   never zero-approval, per the ops/skeptic research on reputational risk).
+
+## Pivot (post-decomposition, 2026-07-12): X-first, not LinkedIn-first
+
+Founder call, made right after Slice 2's LinkedIn-risk decision above: **X/Twitter is the primary
+platform, LinkedIn secondary.** Rationale given: personal branding (a person's voice, hot takes,
+build-in-public) happens on X; LinkedIn is professional networking, a different job entirely. This
+is not just a preference — it also *reduces* the risk Wave 1 just took on, since X's API has
+instant pay-per-use access with no partner-review wait, unlike the LinkedIn `w_member_social` bet
+in Open Decision #1 above (that decision still stands as a parallel/secondary-platform effort, not
+the walking-skeleton's critical path anymore).
+
+Three new capabilities land in Wave 1 as a result, all folded into Slice 3 (signal sourcing) and
+Slice 2 (drafting), not as new slices:
+
+1. **GitHub releases + version tracking, cron-driven.** `metrics_researcher` gets two first-class
+   signal types beyond raw commits: tagged **releases** (higher-signal than a commit — "shipped
+   vX" is a natural ship-announcement trigger) and the client's own **site/product version
+   changes** (new deploys). Both are polled on a cron, not just pulled on-demand at draft time —
+   this pulls a slice of Slice 4's "cadence" work forward specifically for release-triggered
+   content, since a release is a natural *event* trigger distinct from the generic weekly-cadence
+   loop (a release should be able to prompt a draft the same day, not wait for the next scheduled
+   cycle).
+2. **Post-type / personality taxonomy for X.** `content_strategist` now picks a `post_type` (e.g.
+   ship-announcement, hot-take, build-in-public update, contrarian take, thread-starter,
+   milestone/humble-brag) alongside the topic — `post_brief.post_type` is a new field, and each
+   `post_type` maps to a structural template `ghostwriter` drafts against. A GitHub release
+   naturally maps to `ship-announcement`; a `trend_researcher` finding naturally maps to
+   `hot-take`/`contrarian`. This is a real per-platform difference — X rewards distinct post
+   *shapes* in a way a single generic "post" format doesn't.
+3. **Proven high-engagement pattern research.** `trend_researcher`'s scope extends (same role, new
+   tool `viral_pattern_research.json`, Linkup-backed) to study X posts/threads that gained real
+   traction and extract the **structural** pattern (hook style, format, length, thread-vs-single) —
+   not the content. **Explicit guardrail, non-negotiable given the existing anti-fabrication
+   design:** borrowing a proven *hook structure* is fine; borrowing the "clickbait" habit of vague
+   urgency, fabricated stats, or unfalsifiable claims is not — every substantive claim in a drafted
+   post still resolves through `claim_sourcing` at zero tolerance, and `voice_qa`'s
+   `lexical_fingerprint_match` blocklist still applies. "Proven to gain traction" describes the
+   *shape* Auctor is allowed to reuse, not a license to weaken the sourcing/authenticity gates that
+   are the actual product differentiator (see finding #4 below — provenance, not virality tricks,
+   is what's defensible). Flag this plainly in `policy.md` when this ships.
+
+Wave 1 platform order becomes: **Slice 2 and 3 build against X first** (instant API access, no
+review wait, matches the founder's actual positioning). LinkedIn's `w_member_social` attempt
+becomes a Wave 2 addition alongside Slice 6a rather than blocking the walking skeleton.
 
 ## Key research findings (full detail: session transcript, 3 parallel agent passes)
 
@@ -64,34 +109,44 @@ engineering; open questions below are already decided with the founder.
   actual writing (fewer than 3 usable reference excerpts) — recruit a different test client rather
   than fake the signal.
 
-**Slice 2 — First WhatsApp-approved post, one platform**
-- Outcome: that client gets one post drafted (topic manually supplied, no auto-sourcing yet),
-  approved via exactly one WhatsApp reply, and it actually ships.
-- Publish path: attempt LinkedIn's self-serve `w_member_social` OAuth share scope (Open Decision
-  #1, chosen — riskiest but highest-value if it works; no partner-review dependency if this scope
-  is sufficient for personal posting, unlike the Marketing Developer Platform tier).
+**Slice 2 — First WhatsApp-approved post, one platform (X, not LinkedIn — see Pivot)**
+- Outcome: that client gets one post drafted (topic manually supplied, no auto-sourcing yet, no
+  `post_type` taxonomy yet), approved via exactly one WhatsApp reply, and it actually ships to X.
+- Publish path: X/Twitter API — instant pay-per-use access, no partner-review wait. LinkedIn's
+  `w_member_social` attempt (Open Decision #1) moves to Wave 2, parallel to Slice 6a, no longer on
+  the walking skeleton's critical path.
 - Acceptance: ghostwriter drafts → `voice_qa` passes (same 3 checks, on the draft's script) →
-  WhatsApp message sent → single-reply approval → publish → `published_post` recorded with real
-  platform confirmation (not assumed-success).
+  WhatsApp message sent → single-reply approval → publish to X → `published_post` recorded with
+  real platform confirmation (not assumed-success).
 - Deps: Slice 1. Effort: M.
 - Metric: % of drafts approved with zero edit requests (the north-star trust metric — instrument
   from day one, not retrofitted later).
 - Kill criteria: the WhatsApp round-trip requires more than one reply in practice for a real
   client (defeats the core JTBD).
 
-**Slice 3 — Real signal sourcing (the actual differentiator)**
+**Slice 3 — Real signal sourcing + X post-type taxonomy (the actual differentiator)**
 - Outcome: the post topic is no longer manually supplied — sourced from the client's real GitHub
-  activity or a live industry trend, every claim traced to source.
-- Acceptance: `metrics_researcher` pulls real GitHub data with `claim_status` tags;
-  `trend_researcher` pulls real Linkup trend data; `content_strategist` picks from
-  `ClientBrandMemory` pillars + these signals; every factual claim in the resulting draft resolves
-  to a `claim_status: supported` source (zero-tolerance, per the existing `claim_sourcing` design).
-- Deps: Slice 2. Effort: M.
+  activity (commits, **releases**, and their own **site/product version changes**, cron-polled —
+  see Pivot), or a live industry trend, or a **proven high-engagement structural pattern** on X —
+  every substantive claim still traced to source. `content_strategist` also picks a `post_type`
+  (ship-announcement, hot-take, build-in-public, contrarian, thread-starter, milestone) matched to
+  the signal type, and `ghostwriter` drafts against that structural template.
+- Acceptance: `metrics_researcher` pulls real GitHub commit/release/deploy-version data with
+  `claim_status` tags; `trend_researcher` pulls real Linkup trend data AND real
+  `viral_pattern_research` structural findings (hook/format patterns only, never copied claims);
+  `content_strategist` picks topic + `post_type` from `ClientBrandMemory` pillars + these signals;
+  every factual claim in the resulting draft resolves to a `claim_status: supported` source
+  (zero-tolerance, unchanged even when drafting against a "proven viral" structural template —
+  see the Pivot section's explicit anti-fabrication guardrail).
+- Deps: Slice 2. Effort: M (was M, scope grew — reassess after Slice 2 ships whether this splits
+  into 3a signal-sourcing / 3b post-type-taxonomy if it's tracking toward L).
 - Metric: % of published posts whose topic came from a real sourced signal, not a manual pick —
-  this is the metric that actually proves the "provenance" differentiator research validated as
-  the legitimate claim (not voice-matching alone, which competitors already do).
-- Kill criteria: GitHub/product-metrics signal is too sparse to produce a usable topic more than
-  once a week for the real test client — if so, lean harder on `trend_researcher` for that client.
+  proves the "provenance" differentiator research validated as the legitimate claim (not
+  voice-matching or borrowed virality tricks alone, which competitors already do or which would
+  break the sourcing guardrail).
+- Kill criteria: GitHub signal (commits/releases/deploys) is too sparse to produce a usable topic
+  more than once a week for the real test client — if so, lean harder on `trend_researcher` /
+  `viral_pattern_research` for that client.
 
 ### Wave 2 — the loop compounds
 
@@ -111,13 +166,15 @@ engineering; open questions below are already decided with the founder.
 - Metric: % of eligible weeks where the client uses batch-approve over per-post approval.
 
 **Slice 6 — Dual-platform + richer formats**
-- Split into three additive sub-slices, in cost/risk order (cheapest and most differentiating
-  first): **6a** Twitter/X publish with explicit per-platform status (no silent partial-publish —
-  the #1 ops-flagged failure mode) — M. **6b** OpenAI `gpt-image` photo format — S, cheap. **6c**
-  HeyGen video format — S/M, deliberately last: most expensive per-generation, and a one-shot
-  onboarding cost that proves nothing about the recurring loop.
-- Deps: Slice 2 (single-platform publish proven). Metric: 0 silent partial-publish incidents once
-  6a ships (both platforms' status independently visible).
+- Split into three additive sub-slices, in cost/risk order: **6a** LinkedIn publish (the
+  `w_member_social` attempt from Open Decision #1, now secondary-platform not walking-skeleton)
+  with explicit per-platform status (no silent partial-publish — the #1 ops-flagged failure mode)
+  — M, and genuinely optional if the self-serve scope turns out insufficient (LinkedIn becomes a
+  "manual paste" Wizard-of-Oz fallback rather than blocking anything). **6b** OpenAI `gpt-image`
+  photo format — S, cheap. **6c** HeyGen video format — S/M, deliberately last: most expensive
+  per-generation, and a one-shot onboarding cost that proves nothing about the recurring loop.
+- Deps: Slice 2 (single-platform/X publish proven). Metric: 0 silent partial-publish incidents
+  once 6a ships (both platforms' status independently visible).
 
 **Slice 7 — Fleet of N**
 - Outcome: multiple clients run concurrently with the two-column (site status / loop status)
@@ -151,7 +208,9 @@ engineering; open questions below are already decided with the founder.
 
 | # | Decision | Resolution | Blocks |
 |---|---|---|---|
-| 1 | LinkedIn publish path for Slice 2, given the API access risk | Attempt self-serve `w_member_social` OAuth share scope first (not Wizard-of-Oz, not X-first) | Slice 2 |
+| 1 | LinkedIn publish path — superseded by the X-first pivot below | Attempt self-serve `w_member_social` OAuth share scope, but now as a Wave 2 secondary-platform effort (Slice 6a), not Slice 2's walking skeleton | Slice 6a |
+| 4 | Primary platform for the walking skeleton | X, not LinkedIn — personal branding lives on X per the founder; also reduces Wave 1 risk since X's API has no partner-review wait | Slices 2, 3 |
+| 5 | Scope of "proven engagement/clickbait patterns" research | Structural/format patterns only (hook style, length, thread-vs-single) — never content, never license to weaken `claim_sourcing`'s zero-tolerance rule | Slice 3 |
 | 2 | First real test client for Slice 1/2 (needs real writing history for `voice_qa` to work) | Recruit a friend/colleague, not the founder himself — tests the cold-user path per the kernel's own testing bar | Slice 1 |
 | 3 | Approval-batching timing | Pulled forward to right after cadence (Slice 5, not last) given fatigue-abandonment research | Slice 5's position in the sequence |
 
