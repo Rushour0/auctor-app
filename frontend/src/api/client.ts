@@ -118,11 +118,32 @@ export interface PostItem {
   updated_at?: string;
 }
 
-/** A fleet_events row (the Conversations feed). */
+/**
+ * A fleet_events row (the Conversations feed). Includes the agent-run fields
+ * (run_id/agent/stage/outcome/cost_usd/duration_ms/model/provider) so a single
+ * agent's work is traceable end to end, not just the bare event_type.
+ */
 export interface EventItem {
+  event_id: string;
+  workspace_id: string;
+  fleet_id: string;
   event_type: string;
-  client_id: string;
-  pipeline: string;
+  client_id?: string | null;
+  pipeline?: string | null;
+  run_id?: string | null;
+  stage_run_id?: string | null;
+  parent_event_id?: string | null;
+  agent?: string | null;
+  stage?: string | null;
+  outcome?: string | null;
+  attempt?: number;
+  duration_ms?: number | null;
+  input_tokens?: number;
+  output_tokens?: number;
+  cached_tokens?: number;
+  cost_usd?: number;
+  model?: string | null;
+  provider?: string | null;
   payload: Record<string, unknown>;
   recorded_at: string;
   idempotency_key: string;
