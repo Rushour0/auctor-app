@@ -26,12 +26,14 @@ import Posts from "./pages/Posts";
 import Metrics from "./pages/Metrics";
 import Onboarding from "./pages/Onboarding";
 import ContentJob from "./pages/ContentJob";
+import OnboardingStarted from "./pages/OnboardingStarted";
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/onboarding" element={<Onboarding />} />
+      <Route path="/onboarding/started" element={<OnboardingStarted />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route index element={<Conversations />} />
