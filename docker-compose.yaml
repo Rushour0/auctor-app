@@ -1,0 +1,66 @@
+# Auctor production compose. One mongo container (no MinIO, no Qdrant —
+# lighter than ludexel-app's 3-database footprint, see ENGINEERING-WAVES.md).
+# `name:` pinned so the mongo volume is stable regardless of checkout path.
+#
+# In-place deploy: Coolify runs `docker compose pull && up -d` on every
+# webhook fire (see .github/workflows/publish.yml) — no blue-green, images
+# are pulled from GHCR with pull_policy: always so VERSION=latest always
+# re-pulls fresh.
+name: auctor-app
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  service:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-rushour0}/auctor-service:${VERSION:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      AGENCY_ENV: ${AGENCY_ENV:-production}
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: auctor
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-https://auctor-app.rushour0.com}
+      SITE_MAX_RETRY_ATTEMPTS: ${SITE_MAX_RETRY_ATTEMPTS:-2}
+      CONTENT_MAX_RETRY_ATTEMPTS: ${CONTENT_MAX_RETRY_ATTEMPTS:-1}
+      LINKUP_API_KEY: ${LINKUP_API_KEY:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      HEYGEN_API_KEY: ${HEYGEN_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
+      TWITTER_API_KEY: ${TWITTER_API_KEY:-}
+      TWITTER_API_SECRET: ${TWITTER_API_SECRET:-}
+      WHATSAPP_BUSINESS_TOKEN: ${WHATSAPP_BUSINESS_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      DODO_API_KEY: ${DODO_API_KEY:-}
+      DODO_WEBHOOK_SECRET: ${DODO_WEBHOOK_SECRET:-}
+    # No host `ports:` mapping — Coolify's own Traefik (coolify-proxy) sits
+    # on the `coolify` network and routes by domain (assigned per-service in
+    # the Coolify UI) straight to this container's EXPOSEd port. Publishing
+    # 8000/80 to the host directly would fight coolify-proxy's own 80/443
+    # binding, per the aws.md precedent this mirrors.
+
+  frontend:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-rushour0}/auctor-frontend:${VERSION:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      - service
+
+volumes:
+  mongo_data:

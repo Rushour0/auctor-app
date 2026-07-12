@@ -1,197 +1,238 @@
 [
   {
-    "id": "happy_path_site_build",
-    "name": "Happy path: single client's site-build runs research to deploy cleanly",
-    "specialist_refs": [
-      ".agent/prompts/domains/auctor/specialists/researcher.md",
-      ".agent/prompts/domains/auctor/specialists/brand_strategist.md",
-      ".agent/prompts/domains/auctor/specialists/copywriter.md",
-      ".agent/prompts/domains/auctor/specialists/builder.md",
-      ".agent/prompts/domains/auctor/specialists/voice_qa.md",
-      ".agent/prompts/domains/auctor/specialists/deployer.md"
-    ],
-    "setup": {
-      "fleet_size": 1,
-      "client": { "client_id": "client_happy_001", "name": "Dana Okafor", "linkedin_url": "https://linkedin.com/in/danaokafor", "site_url": null, "resume_url": "https://dana.example.com/resume.pdf" },
-      "credentials_available": ["LINKUP_API_KEY", "MONGODB_URI", "CLOUDFLARE_API_TOKEN", "ELEVENLABS_API_KEY", "HEYGEN_API_KEY", "WHATSAPP_BUSINESS_TOKEN"],
-      "client_brand_memory_seeded": false
-    },
-    "steps": [
-      "researcher runs linkup_client_research and returns client_research with usable_claim_count > 0 and usable_voice_excerpt_count = 4",
-      "brand_strategist reads (nonexistent) ClientBrandMemory, produces positioning_brief with memory_check = 'new', writes ClientBrandMemory version 1",
-      "copywriter produces site_copy whose claim_refs are a subset of positioning_brief.proof_points sources",
-      "builder produces site_draft with both media_assets entries (audio via synthesize_voice, video via synthesize_video_intro)",
-      "voice_qa runs structural_voice_match, lexical_fingerprint_match, and claim_sourcing for content_type 'site'; all pass; gate_result = 'pass'",
-      "deployer requests one agency_approve over WhatsApp for client_happy_001, receives it, deploys to cloudflare_pages_project 'auctor-client-happy-001'"
-    ],
-    "expected_outcome": {
-      "final_status": "deployed",
-      "deployed_site.deploy_status": "deployed",
-      "retry_count": 0,
-      "fleet_events_recorded": [
-        "client_research_completed",
-        "client_brand_memory_recorded",
-        "site_built",
-        "voice_qa_checked",
-        "site_deployed"
-      ]
-    },
-    "assertions": [
-      "voice_qa_report.checks contains all three fixed keys: structural_voice_match, lexical_fingerprint_match, claim_sourcing, each with result = 'pass'",
-      "deployed_site.approved_by_approval_id is non-null and corresponds to exactly one agency_approve call scoped to client_happy_001",
-      "ClientBrandMemory.version == 1 and drift_incidents == []"
-    ]
-  },
-  {
     "id": "voice_evidence_floor_auto_fail",
-    "name": "Voice evidence floor: fewer than 3 usable voice excerpts is an automatic voice_qa fail",
+    "name": "Voice evidence floor: fewer than 3 usable voice reference excerpts is an automatic voice_qa fail",
     "specialist_refs": [
       ".agent/prompts/domains/auctor/specialists/researcher.md",
       ".agent/prompts/domains/auctor/specialists/voice_qa.md"
     ],
     "setup": {
       "fleet_size": 1,
-      "client": { "client_id": "client_thin_002", "name": "Marcus Webb" },
-      "injected_fault": "client has almost no public writing (private LinkedIn, no blog, sparse resume prose) -- researcher legitimately returns only 2 voice_reference_excerpts"
+      "client": {
+        "client_id": "client_thin_voice_001",
+        "name": "Marcus Webb",
+        "linkedin_url": "https://linkedin.com/in/marcuswebb",
+        "site_url": null,
+        "resume_url": "https://marcus.example.com/resume.pdf"
+      },
+      "credentials_available": ["LINKUP_API_KEY", "MONGODB_URI", "CLOUDFLARE_API_TOKEN", "ELEVENLABS_API_KEY", "HEYGEN_API_KEY", "WHATSAPP_BUSINESS_TOKEN"],
+      "client_brand_memory_seeded": false,
+      "injected_fault": "client has a private LinkedIn, no blog, and sparse resume prose -- researcher legitimately returns only 2 voice_reference_excerpts, honestly, not padded"
     },
     "steps": [
-      "researcher runs linkup_client_research, returns client_research with usable_voice_excerpt_count = 2 (honest, not padded)",
-      "brand_strategist still writes a thin-but-honest ClientBrandMemory (generic-but-honest category pitch)",
-      "copywriter and builder produce site_copy/site_draft normally",
-      "voice_qa checks client_research.usable_voice_excerpt_count before running the three named checks, finds it < 3, short-circuits to gate_result = 'fail' without attempting structural_voice_match/lexical_fingerprint_match/claim_sourcing"
+      "researcher runs linkup_client_research and returns client_research with usable_claim_count > 0 but voice_reference_excerpts.length = 2 and usable_voice_excerpt_count = 2",
+      "brand_strategist writes a thin-but-honest positioning_brief and ClientBrandMemory version 1 anyway (positioning does not depend on voice excerpt count)",
+      "copywriter and builder produce site_copy and site_draft normally, drafted only against the sourced claim_status:'supported' findings that do exist",
+      "voice_qa checks client_research.usable_voice_excerpt_count BEFORE attempting the three named checks, finds 2 < 3, and short-circuits to gate_result = 'fail' without running structural_voice_match, lexical_fingerprint_match, or claim_sourcing"
     ],
     "expected_outcome": {
       "final_status": "repair_requested",
+      "voice_qa_report.content_type": "site",
+      "voice_qa_report.checks": null,
       "voice_qa_report.gate_result": "fail",
       "voice_qa_report.repair_target": "researcher",
       "retry_count_after": 1
     },
     "assertions": [
-      "voice_qa_report.findings includes an entry explaining the excerpt shortage, not a generic failure message",
-      "no deployed_site artifact exists for client_thin_002 at this point",
-      "researcher's retry attempt does NOT fabricate a third excerpt to hit the count -- a repair pass that pads excerpts to force a pass is itself a policy violation, not a valid fix"
+      "voice_qa_report.findings includes at least one entry with severity 'blocker' and area referencing the voice-evidence floor (e.g. 'voice_evidence_floor'), citing usable_voice_excerpt_count = 2 explicitly, not a generic failure message",
+      "voice_qa does NOT attempt structural_voice_match, lexical_fingerprint_match, or claim_sourcing for this candidate -- the short-circuit happens before the three named checks run",
+      "no deployed_site artifact exists for client_thin_voice_001 at this point",
+      "researcher's repair attempt does not fabricate a third excerpt to hit the count -- padding voice_reference_excerpts to force a pass is itself an ANTI-FABRICATION violation, not a valid fix; a repair that still returns 2 honest excerpts and gets routed to human review is a correct outcome"
     ]
   },
   {
-    "id": "viral_pattern_claim_leak_caught",
-    "name": "Anti-fabrication guardrail: a draft that lifts a claim from a viral_pattern_findings source post is caught by voice_qa",
+    "id": "claim_sourcing_missing_source_ref_auto_fail",
+    "name": "Claim sourcing zero-tolerance: a stated claim with no resolvable source_ref auto-fails claim_sourcing",
+    "specialist_refs": [
+      ".agent/prompts/domains/auctor/specialists/researcher.md",
+      ".agent/prompts/domains/auctor/specialists/copywriter.md",
+      ".agent/prompts/domains/auctor/specialists/voice_qa.md"
+    ],
+    "setup": {
+      "fleet_size": 1,
+      "client": {
+        "client_id": "client_unsourced_002",
+        "name": "Elena Kowalski",
+        "linkedin_url": "https://linkedin.com/in/elenakowalski",
+        "site_url": "https://elenakowalski.example.com",
+        "resume_url": null
+      },
+      "client_brand_memory_seeded": true,
+      "injected_fault": "copywriter's site_copy.about states 'grew the platform to over 2 million users' as fact, and lists it in claim_refs as 'achievement_signals[3]', but client_research.achievement_signals only has indices 0-2 and none of them support that number -- the reference does not resolve to any claim_status:'supported' finding"
+    },
+    "steps": [
+      "researcher returns client_research with achievement_signals[0..2], all claim_status 'supported', usable_voice_excerpt_count = 4 (voice floor satisfied, isolating this case to the sourcing check specifically)",
+      "brand_strategist's positioning_brief.proof_points only cite achievement_signals[0..2]",
+      "copywriter's site_copy (fault injection) adds a fourth, unsourced claim to 'about' and cites a non-existent 'achievement_signals[3]' in claim_refs",
+      "builder renders site_draft with pages[].claim_refs mirroring site_copy.claim_refs, including the bad reference",
+      "voice_qa's claim_sourcing check attempts to resolve every claim_ref against client_research and positioning_brief.proof_points; 'achievement_signals[3]' does not exist and the claim has no other traceable source_ref -- fails"
+    ],
+    "expected_outcome": {
+      "final_status": "repair_requested",
+      "voice_qa_report.content_type": "site",
+      "voice_qa_report.checks.claim_sourcing.result": "fail",
+      "voice_qa_report.gate_result": "fail",
+      "voice_qa_report.repair_target": "copywriter",
+      "retry_count_after": 1
+    },
+    "assertions": [
+      "voice_qa_report.checks.claim_sourcing.unsourced_claims includes an entry for the '2 million users' claim with location referencing site_copy.about (or the equivalent rendered page)",
+      "voice_qa_report.checks.structural_voice_match.result and lexical_fingerprint_match.result may independently be 'pass' -- this case isolates claim_sourcing as the sole failing check, proving zero-tolerance sourcing is enforced even when voice/structure are otherwise fine",
+      "no deployed_site artifact exists for client_unsourced_002 at this point",
+      "a repair that drops the unsourced claim or rephrases it as generic, unattributed framing (never re-adding a fabricated source_ref to force a pass) is the only valid fix per ANTI-FABRICATION"
+    ]
+  },
+  {
+    "id": "sparse_github_signal_metrics_falls_back_to_trend",
+    "name": "Sparse GitHub signal: metrics_researcher returns a thin/empty pass and content_strategist falls back to trend_signal for sourcing",
+    "specialist_refs": [
+      ".agent/prompts/domains/auctor/specialists/metrics_researcher.md",
+      ".agent/prompts/domains/auctor/specialists/trend_researcher.md",
+      ".agent/prompts/domains/auctor/specialists/content_strategist.md"
+    ],
+    "setup": {
+      "fleet_size": 1,
+      "client": {
+        "client_id": "client_sparse_github_003",
+        "name": "Tomasz Nowak",
+        "github_username_or_org": "tomasznowak"
+      },
+      "client_brand_memory_seeded": true,
+      "trigger": "cadence_tick",
+      "injected_fault": "client's GitHub org has had only two uncorroborated commits since since_ts and no releases or product_usage signal this cycle -- a genuinely quiet cycle, not a tool failure"
+    },
+    "steps": [
+      "metrics_researcher polls github_commits, github_releases, and product_usage for client_sparse_github_003 (once the forthcoming github_activity_research tool exists; treated as unavailable/no-findings honestly in the interim per its Failure behavior section)",
+      "metrics_researcher emits metrics_signal(signal_source:'github_commits') with findings tagged claim_status:'needs_source' for the two uncorroborated commits (never 'supported', per its rule that raw commit volume alone never clears the bar), and is_event_trigger:false; emits no github_releases or product_usage artifact since neither has findings this cycle",
+      "metrics_researcher records record_fleet_event(event_type:'metrics_polled') summarizing the thin pass -- it does not retry or invent findings to fill the gap, and it has no verifier-repair loop of its own",
+      "trend_researcher independently returns trend_signal with industry_findings[0] (claim_status:'supported', a real sourced industry data point) for the same cadence tick",
+      "content_strategist reads both signals, finds metrics_signal has no claim_status:'supported' finding to cite, and falls back to trend_signal.industry_findings[0] as the post_brief's signal citation instead, picking a content_pillar this trend genuinely fits"
+    ],
+    "expected_outcome": {
+      "final_status": "post_brief_decided",
+      "post_brief.based_on_metrics_signal_ref": null,
+      "post_brief.based_on_trend_signal_ref": "trend_signal.industry_findings[0]",
+      "post_brief.post_type": "hot-take"
+    },
+    "assertions": [
+      "metrics_signal's only finding(s) are claim_status:'needs_source', never 'supported' -- content_strategist correctly treats the metrics signal as non-citable rather than stretching a commit count into a hard claim",
+      "post_brief.pillar is a current member of ClientBrandMemory.content_pillars and is chosen because trend_signal.industry_findings[0] genuinely supports it, not because content_strategist forced the metrics-thin pillar to fit",
+      "content_strategist does not report this cycle as skipped-for-thin-signal, because trend_signal alone satisfies the sourcing requirement for a non-milestone post_type",
+      "no metrics_signal finding is fabricated or upgraded from needs_source to supported to give content_strategist something to cite -- the fallback to trend_researcher is the correct, policy-compliant path, not a workaround"
+    ]
+  },
+  {
+    "id": "content_strategist_invented_pillar_rejected",
+    "name": "Pillar invention rejected: content_strategist may only select existing ClientBrandMemory.content_pillars, never add one",
+    "specialist_refs": [
+      ".agent/prompts/domains/auctor/specialists/content_strategist.md",
+      ".agent/prompts/domains/auctor/specialists/brand_strategist.md"
+    ],
+    "setup": {
+      "fleet_size": 1,
+      "client": {
+        "client_id": "client_pillar_invent_004",
+        "name": "Sofia Marchetti"
+      },
+      "client_brand_memory_seeded": true,
+      "client_brand_memory": {
+        "client_id": "client_pillar_invent_004",
+        "content_pillars": ["infra reliability lessons", "migration war stories"],
+        "version": 2
+      },
+      "injected_fault": "content_strategist drafts a post_brief with pillar = 'AI agent tooling takes' -- a topic that is trending in trend_signal but is NOT a member of ClientBrandMemory.content_pillars at version 2"
+    },
+    "steps": [
+      "content_strategist reads ClientBrandMemory version 2 (content_pillars = ['infra reliability lessons', 'migration war stories']) and this cycle's trend_signal, which has a strong, well-sourced industry_findings entry about 'AI agent tooling'",
+      "content_strategist (fault injection) attempts to write post_brief.pillar = 'AI agent tooling takes', a value that does not exist in ClientBrandMemory.content_pillars, treating a hot trend as license to add a pillar on the fly",
+      "the manager/harness validates post_brief.pillar against ClientBrandMemory.content_pillars at based_on_memory_version before handing the brief to ghostwriter, and rejects the brief because the pillar is not a current member",
+      "content_strategist is required to either map the trend to an existing pillar (e.g. framing the AI-agent-tooling angle through 'infra reliability lessons' if it genuinely fits) or, if no existing pillar fits, skip the cycle as skipped-for-thin-signal rather than inventing a new one"
+    ],
+    "expected_outcome": {
+      "final_status": "post_brief_rejected",
+      "rejected_post_brief.pillar": "AI agent tooling takes",
+      "rejection_reason": "pillar_not_in_client_brand_memory",
+      "final_replacement_outcome": "post_brief_decided_with_existing_pillar_or_skipped_for_thin_signal"
+    },
+    "assertions": [
+      "no post_brief with pillar = 'AI agent tooling takes' (or any value absent from ClientBrandMemory.content_pillars at based_on_memory_version) is ever handed to ghostwriter",
+      "ClientBrandMemory.content_pillars and .version for client_pillar_invent_004 are unchanged by this cycle -- content_strategist has no write access to ClientBrandMemory under any circumstance, including a 'good idea' trend-driven pillar",
+      "if content_strategist cannot honestly map the trend onto an existing pillar, the correct outcome is a skipped-for-thin-signal record_fleet_event, never a fabricated or auto-added pillar",
+      "adding a new content pillar for this client, if ever warranted, requires a brand_strategist pass (site-build or explicit re-brand) that writes a new ClientBrandMemory version -- content_strategist cannot shortcut that boundary"
+    ]
+  },
+  {
+    "id": "viral_pattern_shape_borrowed_claim_sourcing_still_passes",
+    "name": "Viral-pattern guardrail (positive case): a thread-starter drafted against a viral_pattern shape still passes claim_sourcing because every stated claim resolves to a supported source",
     "specialist_refs": [
       ".agent/prompts/domains/auctor/specialists/trend_researcher.md",
+      ".agent/prompts/domains/auctor/specialists/content_strategist.md",
       ".agent/prompts/domains/auctor/specialists/ghostwriter.md",
       ".agent/prompts/domains/auctor/specialists/voice_qa.md"
     ],
     "setup": {
       "fleet_size": 1,
-      "client": { "client_id": "client_viral_003", "name": "Priya Nair" },
+      "client": {
+        "client_id": "client_viral_shape_ok_005",
+        "name": "Priya Nair"
+      },
       "client_brand_memory_seeded": true,
-      "injected_fault": "ghostwriter drafts a post_type 'thread-starter' post and, drafting against based_on_pattern_ref's structural shape, also copies a specific engagement stat from the observed_post_url's content into post_draft.text as if it were the client's own claim"
+      "precondition": "client_research.usable_voice_excerpt_count = 5 (voice floor satisfied)"
     },
     "steps": [
-      "trend_researcher returns trend_signal with viral_pattern_findings[0] carrying no claim_status field (structure only)",
-      "content_strategist produces post_brief with based_on_pattern_ref = 'trend_signal.viral_pattern_findings[0]' and a real based_on_metrics_signal_ref for sourcing",
-      "ghostwriter's post_draft (fault injection) includes a specific number lifted from the pattern's source post, with a claim_refs entry that does not resolve to any client_research/metrics_signal/trend_signal.industry_findings entry",
-      "voice_qa's claim_sourcing check traces the claim, finds no resolvable supported source_ref, fails"
+      "trend_researcher returns trend_signal.viral_pattern_findings[0] (pattern_id 'vp_1', hook_style 'numbered-countdown', format 'thread', structural_notes describing the shape only, observed_post_url present, and -- correctly -- no claim_status field at all) alongside a real, sourced trend_signal.industry_findings[0]",
+      "content_strategist produces post_brief with post_type 'thread-starter', format 'thread', based_on_pattern_ref = 'trend_signal.viral_pattern_findings[0]' for shape only, AND based_on_trend_signal_ref = 'trend_signal.industry_findings[0]' as the required real signal citation (per its sourcing requirement, based_on_pattern_ref never substitutes for a real signal citation)",
+      "ghostwriter drafts post_draft.text borrowing vp_1's numbered-countdown structural shape, but every specific number/claim in the text is drawn from client_research achievement_signals and trend_signal.industry_findings[0] -- never from vp_1's observed_post_url content -- and claim_refs lists only those resolvable references",
+      "voice_qa runs structural_voice_match, lexical_fingerprint_match, and claim_sourcing for content_type 'post'; claim_sourcing resolves every entry in claim_refs to a claim_status:'supported' finding with no unresolved claim; all three checks pass"
     ],
     "expected_outcome": {
-      "final_status": "repair_requested",
-      "voice_qa_report.checks.claim_sourcing.result": "fail",
-      "voice_qa_report.gate_result": "fail",
-      "voice_qa_report.repair_target": "ghostwriter",
-      "retry_count_after": 1
+      "final_status": "voice_qa_passed",
+      "voice_qa_report.checks.claim_sourcing.result": "pass",
+      "voice_qa_report.checks.claim_sourcing.unsourced_claims": [],
+      "voice_qa_report.gate_result": "pass",
+      "post_draft.drafted_against_post_type": "thread-starter"
     },
     "assertions": [
-      "voice_qa_report.checks.claim_sourcing.unsourced_claims includes the lifted claim",
-      "no published_post artifact with a 'published' platform status exists for client_viral_003's draft at this point",
-      "the failure is attributed to claim_sourcing specifically, not structural_voice_match or lexical_fingerprint_match, confirming the guardrail check ran correctly"
+      "post_draft.claim_refs contains zero references to trend_signal.viral_pattern_findings -- the pattern entry supplied structure only and is never cited as a claim source, per artifacts.md section 9's guardrail",
+      "voice_qa_report.checks.claim_sourcing.result = 'pass' even though the post_type and structural shape were directly informed by a viral_pattern_findings entry -- borrowing a proven hook/format shape does not, by itself, trigger a claim_sourcing failure",
+      "no number, quote, or statistic appearing in post_draft.text traces back to vp_1.observed_post_url -- every factual assertion traces to client_research or trend_signal.industry_findings with claim_status:'supported'",
+      "this case is the guardrail's positive control: viral_pattern_claim_leak style cases prove the check catches a lifted claim; this case proves the same check does not falsely penalize a legitimately shape-only borrowing"
     ]
   },
   {
-    "id": "content_loop_retry_cap_routes_to_human",
-    "name": "Content-loop retry cap: CONTENT_MAX_RETRY_ATTEMPTS = 1 routes to human review with both drafts, never grinds",
-    "specialist_refs": [
-      ".agent/prompts/domains/auctor/specialists/ghostwriter.md",
-      ".agent/prompts/domains/auctor/specialists/voice_qa.md"
-    ],
-    "setup": {
-      "fleet_size": 2,
-      "clients": [
-        { "client_id": "client_retry_004a", "name": "Owen Cassidy" },
-        { "client_id": "client_retry_004b", "name": "Renata Kovac" }
-      ],
-      "injected_fault": "client_retry_004a's post_draft persistently fails voice_qa's lexical_fingerprint_match (generic-AI-tell blocklist hit) on both the original and the one repair attempt; client_retry_004b has no injected fault"
-    },
-    "steps": [
-      "client_retry_004a: voice_qa fails gate_result on attempt 0 (retry_count = 0), routes to ghostwriter for repair",
-      "client_retry_004a: repaired post_draft still fails on attempt 1 (retry_count = 1 = CONTENT_MAX_RETRY_ATTEMPTS); manager.md's bounded loop routes to human review with both drafts attached instead of a second automatic repair",
-      "client_retry_004b proceeds through its own content-loop cycle independently, unaffected"
-    ],
-    "expected_outcome": {
-      "final_status_per_client": { "client_retry_004a": "human_review_requested", "client_retry_004b": "published" },
-      "client_retry_004a_retry_count": 1,
-      "client_retry_004a_further_auto_retry": false
-    },
-    "assertions": [
-      "client_retry_004a.retry_count never exceeds CONTENT_MAX_RETRY_ATTEMPTS (1) and no second automatic repair attempt is dispatched",
-      "the human_review_requested event payload references BOTH the original and the repaired post_draft, not just the latest",
-      "client_retry_004b reaches 'published' with its own published_post artifact, with zero fleet events referencing client_retry_004a's failure",
-      "confirms the CONTENT budget (1) is enforced independently from SITE_MAX_RETRY_ATTEMPTS (2), which this case does not touch"
-    ]
-  },
-  {
-    "id": "partial_publish_never_collapsed",
-    "name": "Partial publish: X succeeds and LinkedIn fails, both surfaced explicitly, never coalesced into one boolean",
+    "id": "dual_platform_publish_partial_status_never_collapsed",
+    "name": "Dual-platform publish: X succeeds and LinkedIn fails, surfaced as independent per-platform status, never a single boolean",
     "specialist_refs": [
       ".agent/prompts/domains/auctor/specialists/publisher.md"
     ],
     "setup": {
       "fleet_size": 1,
-      "client": { "client_id": "client_partial_005", "name": "Iris Zhang", "linkedin_enabled": true },
-      "precondition": "voice_qa_report.gate_result = 'pass' for content_type 'post'; both platform approvals granted",
-      "injected_fault": "publish_x succeeds; publish_linkedin fails with a rate_limited error"
+      "client": {
+        "client_id": "client_dual_platform_006",
+        "name": "Iris Zhang",
+        "linkedin_enabled": true
+      },
+      "precondition": "voice_qa_report.gate_result = 'pass' for content_type 'post'; a single-post WhatsApp approval has been granted (approval_mode 'single')",
+      "injected_fault": "publish_x succeeds and returns a post_url; publish_linkedin fails with a rate_limited error from the LinkedIn API"
     },
     "steps": [
-      "publisher calls publish_x, receives status 'published' with a post_url",
-      "publisher calls publish_linkedin independently, receives status 'failed' with error populated",
-      "publisher writes published_post.platform_status with BOTH entries populated with their true, independent states",
-      "publisher records event_type 'post_published' (since at least one platform succeeded) carrying the full platform_status object, not a summary boolean"
+      "publisher calls publish_x for client_dual_platform_006's approved post_draft, receives status 'published' with post_url and published_at populated, error null",
+      "publisher calls publish_linkedin independently (Slice 6a assumed live for this client), receives status 'failed' with error = 'rate_limited', post_url and published_at both null",
+      "publisher writes published_post.platform_status with BOTH platform entries populated to their true, independently-observed states -- it does not wait for LinkedIn to retry before recording X's success, and does not mark X as anything but 'published' because LinkedIn failed",
+      "publisher records a fleet event carrying the full platform_status object (both keys) rather than a single summary boolean, since at least one platform succeeded but not both"
     ],
     "expected_outcome": {
       "final_status": "partially_published",
       "published_post.platform_status.x.status": "published",
-      "published_post.platform_status.linkedin.status": "failed"
+      "published_post.platform_status.x.error": null,
+      "published_post.platform_status.linkedin.status": "failed",
+      "published_post.platform_status.linkedin.error": "rate_limited"
     },
     "assertions": [
-      "no field anywhere on published_post collapses the two platform outcomes into a single boolean",
-      "the manager's fleet status roll-up, when asked about client_partial_005, names both platforms' states explicitly rather than reporting a generic 'published'",
-      "publisher does not auto-retry the LinkedIn publish itself -- a retry requires the bounded content-loop repair loop or a fresh human decision, not a silent internal retry"
-    ]
-  },
-  {
-    "id": "pipeline_isolation_within_one_client",
-    "name": "Pipeline isolation: a blocked site-build re-brand never pauses that same client's already-running content-loop",
-    "specialist_refs": [
-      ".agent/prompts/domains/auctor/manager.md",
-      ".agent/prompts/domains/auctor/policy.md"
-    ],
-    "setup": {
-      "fleet_size": 1,
-      "client": { "client_id": "client_dual_006", "name": "Tobias Reinholt" },
-      "precondition": "client has a deployed site (ClientBrandMemory version 2) and an active, recurring content-loop already publishing successfully",
-      "injected_fault": "an explicit re-brand site-build pass is triggered and its voice_qa (content_type 'site') fails twice, exhausting SITE_MAX_RETRY_ATTEMPTS and blocking the site-build pipeline"
-    },
-    "steps": [
-      "site-build re-brand pipeline for client_dual_006 exhausts SITE_MAX_RETRY_ATTEMPTS (2) and is marked 'blocked'",
-      "in the same cycle, client_dual_006's content-loop cadence tick fires independently, still reading the LAST GOOD ClientBrandMemory (version 2, not a half-written re-brand draft)",
-      "content_strategist, ghostwriter, voice_qa, and publisher complete a normal content-loop pass for client_dual_006 using version 2"
-    ],
-    "expected_outcome": {
-      "final_status_per_pipeline": { "site_build": "blocked", "content_loop": "published" },
-      "client_brand_memory_version_used_by_content_loop": 2
-    },
-    "assertions": [
-      "content-loop's post_brief.based_on_memory_version == 2, never a half-written or drift-repair-pending version from the blocked re-brand pass",
-      "no fleet event from the blocked site-build pipeline references or blocks any content-loop event for the same client_id",
-      "the fleet status roll-up reports client_dual_006 in TWO separate buckets (site-build: blocked, content-loop: published) rather than one merged status"
+      "no field anywhere on published_post collapses platform_status.x and platform_status.linkedin into a single top-level 'published' boolean, per artifacts.md section 12 and policy.md's PUBLISH STATUS rule",
+      "the manager's fleet status roll-up and any WhatsApp publish-confirmation message name both platforms' states explicitly for client_dual_platform_006, never reporting a bare 'published' on the strength of X alone",
+      "publisher does not silently auto-retry publish_linkedin inline -- a LinkedIn retry requires either the bounded content-loop repair path or a fresh human decision, not an internal retry hidden inside this publish call",
+      "published_post.approved_by_approval_id is the single-use approval for this exact draft and is not reused if a later manual LinkedIn-only retry is issued -- a fresh approval would be required for that retry per policy.md"
     ]
   }
 ]
