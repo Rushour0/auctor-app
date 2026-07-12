@@ -52,6 +52,18 @@ def record_workflow_event(event: dict) -> dict:
 
 
 @mcp.tool()
+def start_observed_stage(event: dict) -> dict:
+    """Start timing one agent stage; requires run, stage-run, agent, and stage identifiers."""
+    return workflow_store().start_stage(WorkflowEvent.model_validate(event))
+
+
+@mcp.tool()
+def complete_observed_stage(event: dict) -> dict:
+    """Complete a stage, derive latency, and persist actual tokens, provider, model, and cost."""
+    return workflow_store().complete_stage(WorkflowEvent.model_validate(event))
+
+
+@mcp.tool()
 def save_approval_record(approval: dict) -> dict:
     """Persist an approval request or decision tied to one immutable artifact."""
     return workflow_store().save_approval(ApprovalRecord.model_validate(approval))
@@ -67,6 +79,18 @@ def save_publish_result(publish: dict) -> dict:
 def get_workflow_status(workspace_id: str, fleet_id: str | None = None) -> dict:
     """Return persisted fleet, pipeline, artifact, event, approval, and post counts."""
     return workflow_store().status(workspace_id, fleet_id)
+
+
+@mcp.tool()
+def get_workflow_run(workspace_id: str, run_id: str) -> dict:
+    """Return one run's ordered agent timeline and measured cost, tokens, and latency."""
+    return workflow_store().run_observability(workspace_id, run_id)
+
+
+@mcp.tool()
+def get_recent_workflow_runs(workspace_id: str, limit: int = 50) -> dict:
+    """Return judge-facing success rate, average cost/latency, and recent run traces."""
+    return workflow_store().recent_runs(workspace_id, limit)
 
 
 @mcp.tool()

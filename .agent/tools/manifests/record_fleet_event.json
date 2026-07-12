@@ -24,6 +24,8 @@
           "deploy_failed",
           "metrics_polled",
           "trend_researched",
+          "content_digest_created",
+          "post_draft_skipped",
           "post_brief_decided",
           "post_drafted",
           "post_published",
@@ -68,6 +70,7 @@
   "retry_policy": { "max_attempts": 2, "backoff_s": 2 },
   "allowed_agents": [
     "researcher", "brand_strategist", "copywriter", "builder", "voice_qa", "deployer",
-    "metrics_researcher", "trend_researcher", "content_strategist", "ghostwriter", "publisher", "engagement_analyst"
+    "metrics_researcher", "trend_researcher", "signal_summarizer", "voice_writer",
+    "content_strategist", "ghostwriter", "publisher", "engagement_analyst"
   ]
 }

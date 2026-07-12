@@ -30,7 +30,8 @@ coolify/                setup.sh / bootstrap.sh / aws.md — EC2 + Coolify deplo
     artifacts.md          field-name catalogue every specialist's output must match verbatim
     specialists/           one file per specialist (researcher, brand_strategist, copywriter,
                             builder, voice_qa, deployer, metrics_researcher, trend_researcher,
-                            content_strategist, ghostwriter, publisher, engagement_analyst)
+                            signal_summarizer, voice_writer, publisher, engagement_analyst;
+                            content_strategist + ghostwriter retained for legacy traces)
     evals/cases.json       regression cases
   tools/manifests/        one JSON manifest per tool (Linkup, Cloudflare, ElevenLabs, HeyGen,
                            OpenAI image, GitHub, LinkedIn, Twitter/X, WhatsApp, Dodo Payments)
@@ -77,6 +78,12 @@ queries, search depth, result/lookback limits, and optional domain filters.
 All collectors write raw evidence, normalized signals, and sync cursors to MongoDB. Hermes calls
 them through the stdio bridge at `integrations/hermes/agency_mcp.py`; its example configuration is
 next to that file. The reusable Hermes skill is `.agent/skills/auctor-data-collectors/SKILL.md`.
+
+After each collection run, `signal_summarizer` reads the exact preceding six-hour window through
+`get_recent_collected_data`, deduplicates the raw and normalized evidence, and produces a short
+list of post-worthy changes, achievements, product signals, and news. `voice_writer` then selects
+the strongest sourced topic and creates one text draft in the client's stored voice before the
+existing voice-QA and approval gates run.
 
 Run the service locally after installing `service/pyproject.toml`:
 

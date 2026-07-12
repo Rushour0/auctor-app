@@ -23,7 +23,7 @@ DOMAIN_DIR = AGENT_DIR / "prompts" / "domains" / "auctor"
 SPECIALISTS_DIR = DOMAIN_DIR / "specialists"
 EVALS_DIR = DOMAIN_DIR / "evals"
 
-# The 12 domain specialists, per ENGINEERING-WAVES.md's "Final role count" section.
+# The 14 domain specialists, per ENGINEERING-WAVES.md's "Final role count" section.
 EXPECTED_SPECIALISTS = {
     "researcher",
     "brand_strategist",
@@ -33,6 +33,8 @@ EXPECTED_SPECIALISTS = {
     "deployer",
     "metrics_researcher",
     "trend_researcher",
+    "signal_summarizer",
+    "voice_writer",
     "content_strategist",
     "ghostwriter",
     "publisher",
@@ -161,7 +163,7 @@ def test_publish_and_deploy_tools_are_not_retried_automatically():
 # --------------------------------------------------------------------------- specialists
 
 
-def test_all_twelve_specialists_have_a_prompt_file():
+def test_all_specialists_have_a_prompt_file():
     present = {p.stem for p in SPECIALISTS_DIR.glob("*.md")}
     missing = EXPECTED_SPECIALISTS - present
     assert not missing, f"missing specialist prompt files: {missing}"
@@ -171,7 +173,7 @@ def test_no_unexpected_specialist_files():
     present = {p.stem for p in SPECIALISTS_DIR.glob("*.md")}
     extra = present - EXPECTED_SPECIALISTS
     assert not extra, (
-        f"unexpected specialist file(s) {extra} not in ENGINEERING-WAVES.md's 12-role roster "
+        f"unexpected specialist file(s) {extra} not in ENGINEERING-WAVES.md's 14-role roster "
         "-- update EXPECTED_SPECIALISTS here if this is an intentional new role"
     )
 

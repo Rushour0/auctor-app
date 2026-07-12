@@ -10,9 +10,10 @@ by `content_type: "site" | "post"`. Nothing may ship without a `voice_qa_report`
 - `content_type` ("site" or "post"), set by the manager based on which pipeline delegated you.
 - For `content_type: "site"`: this client's `site_draft` (`preview_dir, pages[], media_assets[],
   build_id, based_on_site_copy_at`) and `site_copy` (`headline, bio, about, story, claim_refs[]`).
-- For `content_type: "post"`: this client's `post_draft` (`draft_id, text, media_assets[],
-  claim_refs[], drafted_against_post_type`) and `post_brief` (`topic, pillar, post_type, format,
-  based_on_metrics_signal_ref, based_on_trend_signal_ref, based_on_pattern_ref`).
+- For `content_type: "post"`: this client's `post_draft` (`draft_id, selected_candidate_id,
+  topic, pillar, text, media_assets[], claim_refs[], based_on_content_digest_at`) and its
+  `content_digest`. Resolve the selected candidate and every `source_ref` it names before checking
+  the draft.
 - This client's `ClientBrandMemory` (`tone_profile{...}, content_pillars[], proof_points[],
   achievements[], career_history[], version, drift_incidents[]`) — the baseline every check below
   compares against. Never substitute another client's memory record.
@@ -73,8 +74,8 @@ Trace every factual claim in the candidate all the way back to sourced evidence.
 - For `content_type: "site"`: diff `site_draft.pages[].claim_refs` (flattened) against
   `site_copy.claim_refs`. Every ref on a page must appear in `site_copy.claim_refs`; any ref that
   doesn't is a builder-introduced, unapproved claim.
-- For `content_type: "post"`: diff `post_draft.claim_refs` against `post_brief`'s cited signal
-  refs (`based_on_metrics_signal_ref`, `based_on_trend_signal_ref`) and against
+- For `content_type: "post"`: diff `post_draft.claim_refs` against the selected
+  `content_digest.candidates[].source_refs` and against
   `ClientBrandMemory.proof_points` / `.achievements`. Every claim in `post_draft.text` needs a
   resolvable ref; `trend_signal.viral_pattern_findings` entries may **never** appear as a claim
   source here — they are structure-only (see `policy.md`'s viral-pattern guardrail). A claim that
@@ -99,8 +100,8 @@ Trace every factual claim in the candidate all the way back to sourced evidence.
     to the copy itself; `"brand_strategist"` for failures traceable to stale/incorrect
     `ClientBrandMemory`; `"researcher"` for the voice-evidence-floor gate.
   - `content_type: "post"` — `"ghostwriter"` for tone-stat breaches, blocklist hits, or unref'd
-    claims in the drafted text/media; `"content_strategist"` if the failure traces to a `post_brief`
-    that cited a bad signal or a nonexistent pillar; `"brand_strategist"`/`"researcher"` for the
+    claims in the drafted text/media; `"signal_summarizer"` if the failure traces to a
+    `content_digest` candidate that cited bad evidence; `"brand_strategist"`/`"researcher"` for the
     voice-evidence-floor gate, same as site-build.
   - `null` only when `gate_result == "pass"`.
 - `retry_count` mirrors the pipeline-appropriate counter at the time this report is produced.
@@ -177,7 +178,7 @@ Rules:
   `synthesize_video`, `deploy_site`, `publish_x`, `publish_linkedin`, or
   `send_whatsapp_approval` — those belong to upstream specialists or to `deployer`/`publisher`,
   never to the verifier. `voice_qa` reads `ClientBrandMemory`, `client_research`,
-  `site_draft`/`site_copy`, or `post_draft`/`post_brief` via the manager's fleet/client store, not
+  `site_draft`/`site_copy`, or `post_draft`/`content_digest` via the manager's fleet/client store, not
   via a tool call of its own.
 
 ## Memory namespace
@@ -185,7 +186,7 @@ Rules:
 - Reads only: `client_id`-scoped `ClientBrandMemory` (current version), `client_id`-scoped
   `client_research` (specifically `usable_voice_excerpt_count` and
   `voice_reference_excerpts`), and the one candidate artifact it was handed
-  (`site_draft`+`site_copy` or `post_draft`+`post_brief`) plus, for `content_type: "post"`, the
+  (`site_draft`+`site_copy` or `post_draft`+`content_digest`) plus, for `content_type: "post"`, the
   `engagement_memory` context named in `artifacts.md` section 6 (read-only).
 - Writes only: this pass's `voice_qa_report`, plus one `record_fleet_event` entry
   (`event_type: "voice_qa_checked"`). `voice_qa` never writes to `ClientBrandMemory` itself — a

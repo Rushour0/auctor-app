@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +22,7 @@ from service.auctor.workflow import (
 )
 
 from .config import settings
+from .onboarding import OnboardingDraft, OnboardingSubmission
 from .routers.auth import require_operator, router as auth_router
 from .routers.conversations import router as conversations_router
 from .routers.metrics import router as metrics_router
@@ -100,6 +103,58 @@ async def version() -> dict:
 async def list_fleets(operator: dict = Depends(require_operator)) -> dict:
     fleets = await app.state.db.fleet_runs.find({}, {"_id": 0}).to_list(length=100)
     return {"fleets": fleets}
+
+
+@app.put("/api/onboarding/drafts")
+async def save_onboarding_draft(draft: OnboardingDraft) -> dict:
+    """Save an incomplete onboarding form without starting agent work."""
+    draft_id = draft.draft_id or f"draft_{uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc)
+    await app.state.db.onboarding_drafts.update_one(
+        {"workspace_id": draft.workspace_id, "draft_id": draft_id},
+        {
+            "$set": {"payload": draft.payload, "updated_at": now},
+            "$setOnInsert": {
+                "workspace_id": draft.workspace_id,
+                "draft_id": draft_id,
+                "created_at": now,
+            },
+        },
+        upsert=True,
+    )
+    return {"draft_id": draft_id, "saved_at": now, "status": "draft"}
+
+
+@app.post("/api/onboarding/submit", status_code=201)
+async def submit_onboarding(submission: OnboardingSubmission) -> dict:
+    """Validate onboarding, persist the source brief, and initialize both client pipelines."""
+    client_id, fleet_id = submission.identifiers()
+    intake = submission.to_fleet_intake(client_id, fleet_id)
+    try:
+        result = await run_in_threadpool(_workflow_store().start_fleet, intake)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+    now = datetime.now(timezone.utc)
+    await app.state.db.onboarding_submissions.update_one(
+        {"workspace_id": submission.workspace_id, "client_id": client_id},
+        {
+            "$set": {
+                "fleet_id": fleet_id,
+                "submission": submission.model_dump(mode="python"),
+                "status": "submitted",
+                "updated_at": now,
+            },
+            "$setOnInsert": {"created_at": now},
+        },
+        upsert=True,
+    )
+    return {
+        **result,
+        "workspace_id": submission.workspace_id,
+        "client_id": client_id,
+        "next_step": "research",
+    }
 
 
 @app.post("/api/workflows/fleets")
@@ -207,6 +262,21 @@ async def workflow_status(
     operator: dict = Depends(require_operator),
 ) -> dict:
     return await run_in_threadpool(_workflow_store().status, workspace_id, fleet_id)
+
+
+@app.get("/api/workflows/runs/{run_id}")
+async def workflow_run(run_id: str, workspace_id: str) -> dict:
+    """Return an ordered run trace plus cost, token, latency, and outcome totals."""
+    try:
+        return await run_in_threadpool(_workflow_store().run_observability, workspace_id, run_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get("/api/workflows/runs")
+async def workflow_runs(workspace_id: str, limit: int = 50) -> dict:
+    """Return recent correlated runs and task-level scoring metrics."""
+    return await run_in_threadpool(_workflow_store().recent_runs, workspace_id, limit)
 
 
 @app.post("/api/integrations/linkup/verify")

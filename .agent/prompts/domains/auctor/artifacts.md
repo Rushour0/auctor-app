@@ -29,7 +29,7 @@ clients): `client_research` → `positioning_brief` (+ writes `ClientBrandMemory
 `site_copy` → `site_draft` → `voice_qa_report` (content_type: `"site"`) → `deployed_site`.
 
 CONTENT-LOOP pipeline artifacts (recurring per client): `metrics_signal` + `trend_signal` (parallel)
-→ `post_brief` → `post_draft` → `voice_qa_report` (content_type: `"post"`) → `published_post` →
+→ `content_digest` → `post_draft` → `voice_qa_report` (content_type: `"post"`) → `published_post` →
 `engagement_memory`.
 
 ## 1. `client_research` — produced by `researcher`
@@ -474,7 +474,38 @@ Field notes:
   `viral_pattern_findings` only via the `post_brief.based_on_pattern_ref` it's handed, never this
   artifact directly.
 
-## 10. `post_brief` — produced by `content_strategist`
+## 10. `content_digest` — produced by `signal_summarizer`
+
+A compact, deduplicated editorial view of everything collected during the exact six-hour content
+window. It enumerates possible topics; it does not choose the winner or write post copy.
+
+```json
+{
+  "client_id": "client_123",
+  "window": {"since": "ISO-8601", "until": "ISO-8601"},
+  "summary": "string",
+  "candidates": [
+    {
+      "candidate_id": "string",
+      "headline": "string",
+      "what_changed": "string",
+      "why_it_matters": "string",
+      "category": "changed | achieved | product_signal | industry_news",
+      "source_refs": ["string"],
+      "confidence": "high | medium"
+    }
+  ],
+  "noteworthy_absences": ["string"],
+  "generated_at": "ISO-8601",
+  "usage": {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
+}
+```
+
+`candidates` contains at most five entries. Each entry needs at least one resolvable source ref;
+raw and normalized copies of the same evidence count once. An empty list is the correct result for
+a quiet window and prevents downstream drafting.
+
+## 10a. Legacy `post_brief` — produced by `content_strategist`
 
 Which pillar/topic/signal/post_type is next for one client's content-loop cycle.
 `content_strategist` **MAY ONLY select among existing `ClientBrandMemory.content_pillars`, never
@@ -509,41 +540,38 @@ Field notes:
   — lets `voice_qa` and `content_strategist` detect a stale brief if memory has since drifted.
 - `specialists/ghostwriter.md` reads this artifact directly by these field names.
 
-## 11. `post_draft` — produced by `ghostwriter`
+## 11. `post_draft` — produced by `voice_writer`
 
-The exact words (+ media) of one post, drafted against the `post_brief`'s structural template,
-including OpenAI `synthesize_image` and HeyGen `synthesize_video` tool calls made **inside this
-specialist** for `format` values that require media, mirroring `builder`'s in-specialist tool-call
-pattern from the site-build pipeline.
+The exact words of one post, written from the strongest sourced `content_digest` candidate in the
+client's stored voice. The first implementation is text-only; media can be layered in after this
+selection-and-voice loop is reliable.
 
 ```json
 {
   "client_id": "client_123",
   "draft_id": "string",
+  "selected_candidate_id": "string",
+  "topic": "string",
+  "pillar": "string",
   "text": "string",
-  "media_assets": [
-    { "type": "image | video", "asset_url": "string", "source_tool": "synthesize_image | synthesize_video" }
-  ],
+  "media_assets": [],
   "claim_refs": ["metrics_signal[0]", "trend_signal.industry_findings[0]"],
-  "based_on_post_brief_at": "ISO-8601 timestamp",
-  "drafted_against_post_type": "ship-announcement | hot-take | build-in-public | contrarian | thread-starter | milestone",
+  "based_on_content_digest_at": "ISO-8601 timestamp",
+  "based_on_memory_version": 1,
   "generated_at": "ISO-8601 timestamp",
   "usage": { "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0 }
 }
 ```
 
 Field notes:
-- `media_assets` is empty for `format: "text"` briefs; populated per `post_brief.format` for
-  image/video formats, same per-entry shape as `site_draft.media_assets` (`type` / `asset_url` /
-  `source_tool`) for consistency across both pipelines.
+- `media_assets` is empty in this first text-only implementation.
 - `claim_refs` is the flat list of every `metrics_signal` / `trend_signal.industry_findings`
   reference actually used in `text` — `voice_qa`'s `claim_sourcing` check diffs this against
   `claim_status: "supported"` findings exactly as it does for `site_copy.claim_refs`.
   `trend_signal.viral_pattern_findings` entries never appear in `claim_refs` (they are never
   claims, per section 9's guardrail).
-- `drafted_against_post_type` echoes `post_brief.post_type` so `voice_qa` and
-  `content_strategist` can confirm the draft matches the structural template it was briefed
-  against.
+- `selected_candidate_id` must resolve to exactly one entry in the referenced `content_digest`;
+  `claim_refs` may only use that candidate's evidence or supported `ClientBrandMemory` proof.
 - `specialists/voice_qa.md` reads this artifact directly (as `content_type: "post"`).
 
 ## 12. `published_post` — produced by `publisher`

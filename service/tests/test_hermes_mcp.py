@@ -16,10 +16,13 @@ def test_hermes_mcp_exposes_collector_tools() -> None:
                 result = await session.list_tools()
                 assert sorted(tool.name for tool in result.tools) == [
                     "acknowledge_workflow_trigger",
+                    "complete_observed_stage",
                     "enqueue_due_content_loops",
                     "get_collection_status",
                     "get_pending_workflow_triggers",
                     "get_recent_collected_data",
+                    "get_recent_workflow_runs",
+                    "get_workflow_run",
                     "get_workflow_status",
                     "record_workflow_event",
                     "save_approval_record",
@@ -27,6 +30,7 @@ def test_hermes_mcp_exposes_collector_tools() -> None:
                     "save_workflow_artifact",
                     "schedule_content_loop",
                     "start_fleet",
+                    "start_observed_stage",
                     "sync_github",
                     "sync_industry_trends",
                     "sync_posthog",

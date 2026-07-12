@@ -15,7 +15,7 @@ from Microsite Factory's single-pipeline-per-account shape:
    `deployer`. Fleet-parallel across clients, exactly like Microsite Factory's account-pipeline.
 2. **CONTENT-LOOP** — recurring, per-client, self-scheduling (see **KERNEL DEVIATION** in
    `policy.md` — there is no `agency_schedule` verb): `metrics_researcher` + `trend_researcher`
-   (parallel) → `content_strategist` → `ghostwriter` → `voice_qa` (`content_type: "post"`) →
+   (parallel) → `signal_summarizer` → `voice_writer` → `voice_qa` (`content_type: "post"`) →
    `publisher` → `engagement_analyst`.
 
 The two pipelines share exactly one artifact: `ClientBrandMemory` (`artifacts.md`, section 3) —
@@ -78,13 +78,13 @@ Rules for intake handling:
 1. On this client's cadence tick (see **KERNEL DEVIATION** below) or a same-day event trigger
    (`metrics_signal.is_event_trigger == true`), fan out `metrics_researcher` and
    `trend_researcher` in parallel for this `client_id`.
-2. Delegate `content_strategist` to read `ClientBrandMemory` + `metrics_signal` + `trend_signal` +
-   `engagement_memory` and decide one `post_brief` — pillar, topic, `post_type`, `format`. It may
-   only select among `ClientBrandMemory.content_pillars` that already exist; it never edits that
-   array.
-3. Delegate `ghostwriter` to draft `post_draft` — text plus, for `format` values that require it,
-   the OpenAI `synthesize_image` / HeyGen `synthesize_video` tool calls it makes itself, inside the
-   same specialist call.
+2. Delegate `signal_summarizer` to call `get_recent_collected_data` for the exact six-hour window,
+   deduplicate all collected events/metrics/trends/raw evidence, and produce one short
+   `content_digest` of at most five honestly postable changes, achievements, product signals, or
+   news items. An empty digest is a valid quiet cycle.
+3. Delegate `voice_writer` to select the strongest digest candidate and write one text-only
+   `post_draft` in the client's current `ClientBrandMemory` voice. If the digest is empty it records
+   a clean skip; it never manufactures a fallback topic.
 4. Run the **verifier-repair loop** (below) via `voice_qa` (`content_type: "post"`) before any
    publish is attempted.
 5. Require human approval (`agency_approve`, single-post, or a WhatsApp "reply ALL"
@@ -195,8 +195,8 @@ back through that client's own `client_id`.
 
 Site-build: `researcher` → `brand_strategist` → `copywriter` → `builder` → `voice_qa` →
 `deployer`, run different clients' site-builds in parallel whenever their inputs are ready.
-Content-loop: `metrics_researcher` + `trend_researcher` in parallel → `content_strategist` →
-`ghostwriter` → `voice_qa` → `publisher` → `engagement_analyst`, triggered per client by that
+Content-loop: `metrics_researcher` + `trend_researcher` in parallel → `signal_summarizer` →
+`voice_writer` → `voice_qa` → `publisher` → `engagement_analyst`, triggered per client by that
 client's own cron/poll tick or a same-day event trigger. Always run `voice_qa` after the
 candidate-producing specialist and before the ship-side specialist (`deployer`/`publisher`) in
 either pipeline. Never skip `agency_approve` before a deploy or publish, and never reuse an

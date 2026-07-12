@@ -5,7 +5,7 @@
 # pipelines: SITE-BUILD (one-shot: researcher -> brand_strategist -> copywriter -> builder ->
 # voice_qa -> deployer) and CONTENT-LOOP (recurring, self-scheduled per client via a poll/cron
 # inside service/ -- see .agent/prompts/domains/auctor/policy.md's KERNEL DEVIATION note:
-# metrics_researcher + trend_researcher (parallel) -> content_strategist -> ghostwriter ->
+# metrics_researcher + trend_researcher (parallel) -> signal_summarizer -> voice_writer ->
 # voice_qa -> publisher -> engagement_analyst). See .agent/prompts/manager.md and
 # .agent/prompts/domains/auctor/manager.md for the full two-pipeline-per-client workflow.
 #
@@ -50,7 +50,8 @@ agent:
     specialists/*.md}) before acting. Given a fleet brief of clients, run TWO independent
     pipelines per client -- a one-shot SITE-BUILD (research -> position -> copy -> build ->
     voice_qa -> deploy) and a recurring, self-scheduled CONTENT-LOOP (metrics+trend research ->
-    strategize -> draft -> voice_qa -> publish -> analyze) -- each isolated from every other
+    summarize the six-hour window -> select and write in voice -> voice_qa -> publish -> analyze)
+    -- each isolated from every other
     client's pipelines AND from that same client's other pipeline, so one failure never blocks or
     corrupts unrelated state. Obtain sourced client research and trend/metrics signal via Linkup
     and GitHub (GitHub tool forthcoming, see HANDOFF-github-integration.md) when available,
@@ -97,8 +98,8 @@ llm:
       # Sonnet 5 pinned fleet-wide per the standing global override, but flagged here for cost
       # awareness: a site-build wave invokes 6 specialists (researcher/brand_strategist/
       # copywriter/builder/voice_qa/deployer) x N clients once; a content-loop cadence tick
-      # invokes 7 specialists (metrics_researcher/trend_researcher/content_strategist/
-      # ghostwriter/voice_qa/publisher/engagement_analyst) x N clients EVERY tick, indefinitely.
+      # invokes 7 specialists (metrics_researcher/trend_researcher/signal_summarizer/
+      # voice_writer/voice_qa/publisher/engagement_analyst) x N clients EVERY tick, indefinitely.
       # At steady state (a live client cohort past its site-build wave) this role's total call
       # volume is dominated by the recurring pipeline, not the one-shot one -- max_tokens is held
       # tight (every artifact in artifacts.md is short and structured) rather than left at the

@@ -24,11 +24,13 @@ import Conversations from "./pages/Conversations";
 import Crons from "./pages/Crons";
 import Posts from "./pages/Posts";
 import Metrics from "./pages/Metrics";
+import Onboarding from "./pages/Onboarding";
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/onboarding" element={<Onboarding />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route index element={<Conversations />} />

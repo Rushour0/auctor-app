@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from service.auctor.config import Settings
@@ -223,6 +223,98 @@ def test_duplicate_client_ids_are_rejected() -> None:
         assert "unique" in str(error)
     else:
         raise AssertionError("Expected duplicate client ids to be rejected")
+
+
+def test_run_observability_aggregates_agent_cost_tokens_and_latency() -> None:
+    workflow = store()
+    workflow.start_fleet(intake())
+    for event in (
+        WorkflowEvent(
+            workspace_id="workspace-1", fleet_id="fleet-1", client_id="client-1",
+            pipeline="content_loop", run_id="run-1", stage_run_id="stage-1",
+            agent="researcher", stage="research", outcome="succeeded",
+            event_type="stage.completed", idempotency_key="run-1:research:1",
+            duration_ms=1200, input_tokens=100, output_tokens=40, cached_tokens=10,
+            cost_usd=0.03, model="test-model", provider="test-provider",
+        ),
+        WorkflowEvent(
+            workspace_id="workspace-1", fleet_id="fleet-1", client_id="client-1",
+            pipeline="content_loop", run_id="run-1", stage_run_id="stage-2",
+            parent_event_id="stage-1", agent="writer", stage="draft", outcome="failed",
+            event_type="stage.failed", idempotency_key="run-1:draft:1",
+            duration_ms=800, input_tokens=200, output_tokens=80, cost_usd=0.07,
+        ),
+    ):
+        workflow.record_event(event)
+
+    run = workflow.run_observability("workspace-1", "run-1")
+    assert run["summary"] == {
+        "event_count": 2, "measured_steps": 2, "duration_ms": 2000,
+        "wall_clock_duration_ms": 2000,
+        "input_tokens": 300, "output_tokens": 120, "cached_tokens": 10,
+        "cost_usd": 0.1, "outcomes": {"succeeded": 1, "failed": 1},
+    }
+    assert run["by_agent"]["researcher"]["cost_usd"] == 0.03
+    assert run["by_agent"]["writer"]["duration_ms"] == 800
+    pipeline = workflow.db.client_pipelines.documents[1]
+    assert pipeline["usage"] == {
+        "input_tokens": 300, "output_tokens": 120, "cached_tokens": 10,
+        "latency_ms": 2000, "cost_usd": 0.1,
+    }
+
+
+def test_run_observability_rejects_unknown_run() -> None:
+    workflow = store()
+    try:
+        workflow.run_observability("workspace-1", "missing")
+    except ValueError as error:
+        assert "not found" in str(error)
+    else:
+        raise AssertionError("Expected unknown run to be rejected")
+
+
+def test_recent_runs_calculates_task_metrics_from_real_events() -> None:
+    workflow = store()
+    workflow.start_fleet(intake())
+    for run_id, outcome, cost, duration in (
+        ("run-success", "succeeded", 0.12, 60_000),
+        ("run-failed", "failed", 0.08, 30_000),
+    ):
+        workflow.record_event(WorkflowEvent(
+            workspace_id="workspace-1", fleet_id="fleet-1", client_id="client-1",
+            pipeline="content_loop", run_id=run_id, agent="publisher", stage="publish",
+            outcome=outcome, event_type="run.completed" if outcome == "succeeded" else "run.failed",
+            idempotency_key=f"{run_id}:{outcome}", cost_usd=cost, duration_ms=duration,
+        ))
+    result = workflow.recent_runs("workspace-1")
+    assert result["metrics"] == {
+        "tasks_attempted": 2,
+        "tasks_completed": 1,
+        "task_success_rate_percent": 50.0,
+        "average_cost_usd": 0.12,
+        "average_measured_latency_ms": 45_000,
+    }
+
+
+def test_observed_stage_derives_duration_and_records_usage() -> None:
+    workflow = store()
+    workflow.start_fleet(intake())
+    started = datetime(2026, 7, 12, 10, 0, tzinfo=timezone.utc)
+    workflow.start_stage(WorkflowEvent(
+        workspace_id="workspace-1", fleet_id="fleet-1", client_id="client-1",
+        pipeline="content_loop", run_id="run-timed", stage_run_id="stage-timed",
+        agent="voice_writer", stage="draft", event_type="ignored",
+        idempotency_key="run-timed:draft:started", started_at=started,
+    ))
+    result = workflow.complete_stage(WorkflowEvent(
+        workspace_id="workspace-1", fleet_id="fleet-1", client_id="client-1",
+        pipeline="content_loop", run_id="run-timed", stage_run_id="stage-timed",
+        agent="voice_writer", stage="draft", outcome="succeeded",
+        event_type="stage.completed", idempotency_key="run-timed:draft:completed",
+        completed_at=started + timedelta(seconds=2), input_tokens=20, output_tokens=10,
+        cost_usd=0.01,
+    ))
+    assert result["duration_ms"] == 2000
 
 
 def test_scheduler_enqueues_each_due_window_once() -> None:

@@ -13,15 +13,16 @@ Things noted **"later stage"** below are explicitly deferred — documented now,
 via a one-agent-per-file workflow, styled against `~/hermes/microsites`' existing rigor (read-only
 reference, nothing written there).
 
-**Final role count: 15 agents**, confirmed — not counting the approval gate (a state, not an
+**Final role count: 17 agents**, confirmed — not counting the approval gate (a state, not an
 agent) or a separate "repair agent" (repair re-invokes whichever specialist produced the failing
 artifact, bounded by retry count, same pattern Microsite Factory uses — not its own role).
 
 - Hermes (2): conversational manager, narrator.
-- Fabri (13): the Fabri manager + 12 domain specialists — `researcher`, `brand_strategist`,
+- Fabri (15): the Fabri manager + 14 domain specialists — `researcher`, `brand_strategist`,
   `copywriter`, `builder`, `voice_qa` (shared verifier), `deployer` (site-build, 6); plus
-  `metrics_researcher`, `trend_researcher`, `content_strategist`, `ghostwriter`, `publisher`,
-  `engagement_analyst` (content-loop, 6).
+  `metrics_researcher`, `trend_researcher`, `signal_summarizer`, `voice_writer`, `publisher`,
+  `engagement_analyst` (active content-loop, 6), plus legacy `content_strategist` and
+  `ghostwriter` prompts retained for old trace compatibility.
 
 ## Wave 1 — `service/` + `frontend/` scaffolding (later stage)
 
