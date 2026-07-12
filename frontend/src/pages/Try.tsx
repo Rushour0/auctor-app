@@ -70,7 +70,7 @@ export default function Try() {
         margin: "0 auto",
       }}
     >
-      <h1>What should you post next?</h1>
+      <h1 style={{ fontSize: "1.6rem", margin: "0 0 0.4rem" }}>What should you post next?</h1>
       <p style={{ color: "#6b7280" }}>
         No signup. Give us a LinkedIn profile or an X handle — we'll find your real, public
         activity and suggest a few posts, each linked back to the source we found it from.

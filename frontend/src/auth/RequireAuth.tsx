@@ -37,7 +37,23 @@ export default function RequireAuth() {
     };
   }, []);
 
-  if (state.status === 'pending') return <div>Loading…</div>;
+  if (state.status === 'pending') {
+    return (
+      <div
+        style={{
+          fontFamily: 'system-ui, sans-serif',
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#6b7280',
+          fontSize: '0.9rem',
+        }}
+      >
+        Loading…
+      </div>
+    );
+  }
   if (state.status === 'out') return <Navigate to="/login" replace />;
   return <Outlet />;
 }
