@@ -1,0 +1,41 @@
+mcp_servers:
+  auctor-memory:
+    command: ".venv/bin/python"
+    args: ["integrations/hermes/agency_mcp.py"]
+    env:
+      MONGODB_URI: "${MONGODB_URI}"
+      MONGODB_DB: "${MONGODB_DB}"
+      AUCTOR_WORKSPACE_ID: "${AUCTOR_WORKSPACE_ID}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+      GITHUB_OWNER: "${GITHUB_OWNER}"
+      GITHUB_REPOSITORIES: "${GITHUB_REPOSITORIES}"
+      LINKUP_API_KEY: "${LINKUP_API_KEY}"
+      POSTHOG_HOST: "${POSTHOG_HOST}"
+      POSTHOG_PROJECT_ID: "${POSTHOG_PROJECT_ID}"
+      POSTHOG_PERSONAL_API_KEY: "${POSTHOG_PERSONAL_API_KEY}"
+      POSTHOG_AUTH_MODE: "${POSTHOG_AUTH_MODE}"
+    supports_parallel_tool_calls: false
+    tools:
+      include:
+        - start_fleet
+        - save_workflow_artifact
+        - record_workflow_event
+        - save_approval_record
+        - save_publish_result
+        - get_workflow_status
+        - enqueue_due_content_loops
+        - schedule_content_loop
+        - get_pending_workflow_triggers
+        - acknowledge_workflow_trigger
+        - sync_github
+        - verify_linkup_connection
+        - sync_industry_trends
+        - verify_posthog_connection
+        - sync_posthog
+        - get_collection_status
+      prompts: false
+      resources: false
+
+skills:
+  external_dirs:
+    - ".agent/skills"

@@ -9,8 +9,11 @@ description = "Auctor FastAPI service: Hermes/Fabri control plane, client pipeli
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.110",
+    "httpx>=0.28",
+    "mcp>=1.12,<2",
     "uvicorn[standard]>=0.27",
     "motor>=3.4",
+    "pymongo>=4.13",
     "pydantic>=2.6",
     "pydantic-settings>=2.1",
 ]
@@ -32,5 +35,5 @@ line-length = 100
 target-version = "py312"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "service/tests"]
 asyncio_mode = "auto"

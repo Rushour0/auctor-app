@@ -1,0 +1,7 @@
+{
+  "name": "sync_github",
+  "provider": "auctor-memory",
+  "description": "Collect PRs merged into main since the previous successful check, with commit messages and code changes.",
+  "writes": ["raw_records", "events", "sync_states"],
+  "required_env": ["MONGODB_URI", "GITHUB_TOKEN"]
+}

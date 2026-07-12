@@ -1,0 +1,3 @@
+# Run from the Auctor service container/image. Cron wakes application code; it never writes
+# directly to MongoDB and never publishes without the normal Hermes QA/approval workflow.
+0 */6 * * * cd /app && .venv/bin/python -m service.auctor.scheduler >> /proc/1/fd/1 2>> /proc/1/fd/2

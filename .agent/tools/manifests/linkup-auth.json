@@ -1,0 +1,7 @@
+{
+  "name": "verify_linkup_connection",
+  "provider": "auctor-memory",
+  "description": "Validate the Linkup API key and return the current credit balance without running a search.",
+  "writes": ["sync_states"],
+  "required_env": ["MONGODB_URI", "LINKUP_API_KEY"]
+}

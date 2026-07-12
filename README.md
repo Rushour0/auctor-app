@@ -51,4 +51,48 @@ image/video formats, then Dodo billing last).
 cp .env.example .env   # fill in real values — never commit .env
 ```
 
+### Source collectors
+
+The Slice 3 ingestion foundation lives in `service/auctor/collectors/`:
+
+- GitHub: PRs merged into `main` since the previous successful check, including PR copy,
+  commit messages, changed files, available patches, and merge timestamps.
+- Linkup: deduplicated industry sources with preserved URLs and provenance.
+- PostHog: raw product events and per-event count observations since the previous successful
+  check.
+
+PostHog uses a read-only personal API key for the initial single-project deployment. The
+`verify_posthog_connection` Hermes tool checks `/api/users/@me/` and access to the configured
+project before collection, and stores only non-secret connection metadata. A customer-facing
+multi-tenant release should replace this credential mode with PostHog OAuth.
+
+Linkup uses bearer-key authentication. `verify_linkup_connection` validates the key through the
+credit-balance endpoint without spending a search request. Trend searches apply an incremental
+date window from the previous successful cursor, support include/exclude domain filters, remove
+tracking parameters, deduplicate canonical URLs, and preserve the original result payload.
+The deployed service exposes the same integration at `POST /api/integrations/linkup/verify` and
+`POST /api/integrations/linkup/sync`; the sync body accepts `workspace_id`, topics or explicit
+queries, search depth, result/lookback limits, and optional domain filters.
+
+All collectors write raw evidence, normalized signals, and sync cursors to MongoDB. Hermes calls
+them through the stdio bridge at `integrations/hermes/agency_mcp.py`; its example configuration is
+next to that file. The reusable Hermes skill is `.agent/skills/auctor-data-collectors/SKILL.md`.
+
+Run the service locally after installing `service/pyproject.toml`:
+
+```bash
+.venv/bin/pip install -e 'service[dev]'
+uvicorn auctor.main:app --app-dir service --reload
+.venv/bin/python integrations/hermes/agency_mcp.py
+```
+
 See `coolify/aws.md` once written for the EC2/Coolify production deploy path.
+
+### Content-loop scheduler
+
+`python -m service.auctor.scheduler` atomically enqueues due content-loop triggers in MongoDB.
+Run it every six hours using `docker/auctor-scheduler.cron` or a Coolify Scheduled Task with the
+same command. Concurrent invocations are safe: advancing `next_content_check_at` is an atomic
+claim, and every cadence window has a deterministic unique trigger id. Hermes reads pending
+triggers through `get_pending_workflow_triggers`, marks each `running`, and finally acknowledges
+it as `completed` or `failed`. The scheduler itself never drafts or publishes content.

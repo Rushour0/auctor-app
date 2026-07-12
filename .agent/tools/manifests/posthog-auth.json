@@ -1,0 +1,7 @@
+{
+  "name": "verify_posthog_connection",
+  "provider": "auctor-memory",
+  "description": "Validate a PostHog personal API key and confirm access to the configured project without returning the secret.",
+  "writes": ["sync_states"],
+  "required_env": ["MONGODB_URI", "POSTHOG_HOST", "POSTHOG_PROJECT_ID", "POSTHOG_PERSONAL_API_KEY"]
+}

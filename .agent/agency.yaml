@@ -139,7 +139,8 @@ tools:
     # manifest actually exists under .agent/tools/manifests/.
   sandbox_root: .
   result_format: toon
-  mcp_servers: []
+  mcp_servers:
+    - auctor-memory
 
 memory:
   backend: sqlite
